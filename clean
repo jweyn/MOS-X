@@ -1,0 +1,105 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Dec 18 10:38:54 2017
+
+@author: jweyn
+
+Clean the archived files for a particular site.
+"""
+
+import os
+import sys
+import mosx
+from optparse import OptionParser
+
+
+def get_command_options():
+    parser = OptionParser()
+    parser.add_option('-s', '--station-id', dest='station_id', action='store',
+                      type='string', default='',
+                      help='Station ID to clean (required!)')
+    parser.add_option('-d', '--no-remove-site-data', dest='data_flag', action='store_true',
+                      default=False, help="Don't delete files in site_data")
+    parser.add_option('-b', '--remove-bufr', dest='bufr_flag', action='store_true',
+                      default=False, help='Delete archived BUFKIT files')
+    parser.add_option('-u', '--remove-upper-air', dest='sndg_flag', action='store_true',
+                      default=False, help='Delete archived sounding (upper air) files')
+    parser.add_option('-m', '--remove-model', dest='model_flag', action='store_true',
+                      default=False, help='Delete estimator files *mosx*.pkl')
+    parser.add_option('-v', '--verbose', dest='verbose', action='store_true',
+                      default=False, help='Print some extra statements')
+    (opts, args) = parser.parse_args()
+    return opts, args
+
+
+options, arguments = get_command_options()
+station_id, data_flag, bufr_flag, sndg_flag, model_flag, verbose = (options.station_id, options.data_flag,
+                                                                    options.bufr_flag, options.sndg_flag,
+                                                                    options.model_flag, options.verbose)
+try:
+    config_file = arguments[0]
+except IndexError:
+    print('Required argument (config file) not provided.')
+    sys.exit(1)
+config = mosx.util.get_config(config_file)
+
+bufr_data_dir = config['BUFR']['bufr_data_dir']
+sndg_data_dir = config['Obs']['sounding_data_dir']
+
+if station_id == '':
+    print('\nStation ID (-s) required! Use --help or -h for full options.')
+    sys.exit(1)
+
+station_id = station_id.upper()
+print('mosx_clean: Cleaning files for station %s' %station_id)
+print('  Files to delete:')
+if not data_flag:
+    print('    Site data in %s' % config['SITE_ROOT'])
+if bufr_flag:
+    print('    BUFKIT archives in %s' % bufr_data_dir)
+if sndg_flag:
+    print('    Sounding files in %s' % sndg_data_dir)
+if model_flag:
+    print("    Model estimator in config or files containing 'mosx'")
+
+rm_command = 'rm -f'
+
+if not data_flag:
+    if verbose:
+        print('mosx_clean: deleting %s files in %s' % (station_id, config['SITE_ROOT']))
+    listing = os.listdir(config['SITE_ROOT'])
+    if not model_flag:
+        for ll in listing:
+            if ll == config['Model']['estimator_file'].split('/')[-1]:
+                listing.remove(ll)
+            if 'mosx' in ll.lower() and station_id in ll.upper():
+                listing.remove(ll)
+    else:
+        if verbose:
+            print('mosx_clean: deleting model estimator files')
+    for f in listing:
+        if not f.upper().startswith(station_id):
+            continue
+        command = '%s %s/%s' % (rm_command, config['SITE_ROOT'], f)
+        if verbose:
+            print(command)
+        os.system(command)
+
+if bufr_flag:
+    if verbose:
+        print('mosx_clean: deleting bufr files in %s' % bufr_data_dir)
+    command = '%s %s/*%s*' % (rm_command, bufr_data_dir, station_id.lower())
+    if verbose:
+        print(command)
+    os.system(command)
+
+if sndg_flag:
+    if verbose:
+        print('mosx_clean: deleting sounding files in %s' % sndg_data_dir)
+    command = '%s %s/%s*' % (rm_command, sndg_data_dir, station_id)
+    if verbose:
+        print(command)
+    os.system(command)
+
+print('\nDone.')

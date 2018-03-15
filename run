@@ -1,0 +1,306 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Oct 25 15:43:58 2017
+
+@author: jweyn
+
+Run the MOS-X model either for 23Z on any given day or for tomorrow.
+"""
+
+import os
+import sys
+import mosx
+import numpy as np
+import pandas as pd
+from collections import OrderedDict
+from optparse import OptionParser
+from datetime import datetime, timedelta
+import pickle
+
+# Suppress warnings
+import warnings
+warnings.filterwarnings("ignore")
+
+
+def get_command_options():
+    parser = OptionParser()
+    parser.add_option('-d', '--date', dest='datestr', action='store', 
+                      type='string', default='tomorrow', 
+                      help='Date to run model for, YYYYMMDD (default=tomorrow)')
+    parser.add_option('-w', '--write', dest='write_flag', action='store_true', 
+                      default=False, help='Write to a pickle file')
+    parser.add_option('-f', '--write-file', dest='write_file', action='store', 
+                      type='string', default='default',
+                      help=('If -w is enabled, write to this file '
+                            '(default {site_data}/{stid}_MOSX_fcst.pkl)'))
+    parser.add_option('-u', '--upload', dest='upload', action='store_true', 
+                      default=False, help='Upload to WxChallenge account')
+    parser.add_option('-p', '--probabilities', dest='prob', action='store_true',
+                      default=False, help='Calculate probability distributions')
+    (opts, args) = parser.parse_args()
+    return opts, args
+
+
+def dewpoint(T, RH):
+    """
+    Calculates dewpoint from T in Fahrenheit and RH in percent.
+    """
+
+    def FtoC(T):
+        return (T - 32.) / 9. * 5.
+
+    def CtoF(T):
+        return 9. / 5. * T + 32.
+
+    b = 17.67
+    c = 243.5  # deg C
+
+    def gamma(T, RH):
+        return np.log(RH/100.) + b * T/ (c + T)
+
+    T = FtoC(T)
+    TD = c * gamma(T, RH) / (b - gamma(T, RH))
+    return CtoF(TD)
+
+
+# %% Figure out the date
+
+options, arguments = get_command_options()
+datestr, write_flag, write_file, upload, prob = (options.datestr, options.write_flag, options.write_file, 
+                                                 options.upload, options.prob)
+try:
+    config_file = arguments[0]
+except IndexError:
+    print('Required argument (config file) not provided.')
+    sys.exit(1)
+config = mosx.util.get_config(config_file)
+
+if datestr == 'tomorrow':
+    date = datetime.utcnow()
+    # BUFR cycle
+    cycle = str(6 * (((date.hour + 24 - 4) % 24) // 6))
+    verif_date = datetime(date.year, date.month, date.day) + timedelta(days=1)
+else:
+    cycle = '18'
+    try:
+        verif_date = datetime.strptime(datestr, '%Y%m%d')
+    except:
+        raise ValueError('Invalid date format entered (use YYYYMMDD).')
+
+# Override the INFILE values
+new_start_date = datetime.strftime(verif_date, '%Y%m%d')
+new_end_date   = datetime.strftime(verif_date, '%Y%m%d')
+config['data_start_date'] = new_start_date
+config['data_end_date'] = new_end_date
+
+
+# %% Retrieve data
+
+bufr_file = '%s/%s_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+print('\n--- MOS-X run: retrieving BUFR data...\n')
+print('Using model cycle %sZ' % cycle)
+mosx.bufr.bufr(config, bufr_file, cycle=cycle)
+
+obs_file = '%s/%s_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+print('\n--- MOS-X run: retrieving OBS data...\n')
+mosx.obs.obs(config, obs_file, use_nan_sounding=True, use_existing_sounding=False)
+
+
+# %% Format data
+
+predictor_file = '%s/%s_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], 
+                                              new_end_date)
+print('\n--- MOS-X run: formatting predictor data...\n')
+precip = mosx.train.format_predictors(config, bufr_file, obs_file, None, predictor_file, return_precip_forecast=True)
+precip = precip[0]
+print('Raw forecast precipitation values:')
+print(precip)
+
+
+# %% Load the input data and the estimator
+
+print('\n--- MOS-X run: calculating forecast...\n')
+with open(predictor_file, 'rb') as handle:
+    data = pickle.load(handle)
+print('Loading estimator %s...' % config['Model']['estimator_file'])
+with open(config['Model']['estimator_file'], 'rb') as handle:
+    estimator = pickle.load(handle)
+
+predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)
+predicted  = np.squeeze(estimator.predict(predictors))
+
+# Check for precipitation override
+if sum(precip) < 0.01:
+    print('Warning: overriding MOS-X prediction of %0.2f for rain with 0' % 
+          predicted[3])
+    predicted[3] = 0.
+elif predicted[3] > max(precip) or predicted[3] < min(precip):
+    print('Warning: MOS-X prediction for rainfall out of model range; ' + 
+          'overriding MOS-X prediction of %0.2f with model mean' % predicted[3])
+    predicted[3] = np.mean(precip + [predicted[3]])
+
+# If probabilities are requested and available, get the results from each tree
+if not(config['Model']['regressor'].startswith('ensemble')):
+    prob = False
+if prob:
+    imputer = estimator.named_steps['imputer']
+    forest = estimator.named_steps['regressor']
+    predictors = imputer.transform(predictors)
+    if config['Model']['train_multi']:
+        num_trees = len(forest.estimators_[0].estimators_)
+        all_predicted = np.zeros((num_trees, 4))
+        for v in range(4):
+            for t in range(num_trees):
+                all_predicted[t, v] = forest.estimators_[v].estimators_[t].predict(predictors)
+    else:
+        num_trees = len(forest.estimators_)
+        all_predicted = np.zeros((num_trees, 4))
+        for t in range(num_trees):
+            all_predicted[t, :] = forest.estimators_[t].predict(predictors)[:4]
+    predicted_std = np.std(all_predicted, axis=0)
+
+if config['Model']['predict_timeseries']:
+    predicted_array = predicted[4:].reshape((4, 25)).T
+    # Get dewpoint
+    predicted_array[:, 2] = dewpoint(predicted_array[:, 0], predicted_array[:, 2])
+    times = pd.date_range(verif_date.replace(hour=6), periods=25, freq='H').to_pydatetime().tolist()
+    variables = ['temperature', 'rain', 'dewpoint', 'windSpeed']
+    round_dict = {'temperature': 0, 'rain': 2, 'dewpoint': 0, 'windSpeed': 0}
+    predicted_timeseries = pd.DataFrame(predicted_array, index=times, columns=variables)
+    predicted_timeseries = predicted_timeseries.round(round_dict)
+
+# %% Print forecast!
+
+print('\nFor day %s at %s, the predicted forecast is' % (new_end_date, 
+                                                         config['station_id']))
+print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[:4]))
+
+if prob:
+    predicted_display = []
+    for v in range(4):
+        predicted_display.append(predicted[v])
+        predicted_display.append(predicted_std[v])
+    print('\nPredicted forecast with standard deviation is')
+    print('%0.1f+/-%0.1f | %0.1f+/-%0.1f | %0.1f+/-%0.1f | %0.3f+/-%0.3f' % tuple(predicted_display))
+    print('\nNote that the reported rain above may be adjusted from raw model output.')
+
+if config['Model']['predict_timeseries']:
+    print('\nPredicted time series:')
+    print(predicted_timeseries)
+
+
+# %% Write the forecast, if requested
+
+if write_flag:
+    if write_file == 'default':
+        write_file = '%s/%s_MOSX_fcst.pkl' % (config['SITE_ROOT'], config['station_id'])
+    print('\nForecast write requested, writing to file %s' % write_file)
+    # Check if pickle file already exists
+    try:
+        with open(write_file, 'rb') as handle:
+            data = pickle.load(handle)
+    except:
+        data = OrderedDict()
+    
+    data[verif_date] = {
+                        'high'  : np.round(predicted[0]),
+                        'low'   : np.round(predicted[1]),
+                        'wind'  : np.round(predicted[2]),
+                        'precip': np.round(predicted[3], 2)
+                       }
+
+    if config['Model']['predict_timeseries']:
+        data[verif_date].update(predicted_timeseries.to_dict(into=OrderedDict))
+
+    with open(write_file, 'wb') as handle:
+        pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
+
+# %% Make plots of probability distributions
+
+if prob:
+    # Imports
+    import matplotlib
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gs
+    import matplotlib.ticker as ticker
+    from scipy.stats import norm
+    matplotlib.rcParams.update({'font.size': 9})
+
+    prob_file = '%s/%s_MOSX_prob.svg' % (config['SITE_ROOT'], config['station_id'])
+
+    def plot_probabilities(predicted):
+        fig = plt.figure()
+        fig.set_size_inches(8, 6)
+        gs1 = gs.GridSpec(2, 2)
+        gs1.update(wspace=0.18, hspace=0.18)
+
+        def plot_histogram(subplot_num, x, unit=1., facecolor='b', bins=None, align='left',
+                           xtickint=None, decimals=1, title=None):
+            global fig
+            ax = plt.subplot(subplot_num)
+
+            if bins is None:
+                bins = max(int(np.nanmax(x)/unit - np.nanmin(x)/unit), 1)
+            n, bins, patches = plt.hist(x, bins=bins, facecolor=facecolor, normed=True, align=align,)
+            x_axis = np.linspace(np.nanmin(x), np.nanmax(x), 101)
+            x_mean = np.nanmean(x)
+            x_std = np.nanstd(x)
+            normal = norm.pdf(x_axis, x_mean, x_std)
+            plt.plot(x_axis, normal)
+            if xtickint is not None:
+                ax.xaxis.set_major_locator(ticker.MultipleLocator(xtickint))
+            ylim = ax.get_ylim()
+            if ylim[1] - np.nanmax(n) < 0.005:
+                ax.set_ylim([ylim[0], ylim[1]+0.005])
+            ax.set_yticklabels(['{:.1f}'.format(100.*l*unit) for l in plt.yticks()[0]])
+            if plot_num % 2 == 0:
+                ax.set_ylabel('Frequency (%)')
+            plt.axvline(x_mean, linewidth=1.5, color='black')
+            formatter = '%0.{:d}f'.format(decimals)
+            text = ('Mean: %s\nStd: %s' % (formatter, formatter)) % (x_mean, x_std)
+            plt.text(x_mean+unit/2, 0.9*np.nanmax(n), text, fontsize=8)
+            if title is not None:
+                ax.set_title(title)
+            return
+
+        colors = [(0.1, 0.6, 0.4),
+                  (0.6, 0.1, 0.4),
+                  (0.2, 0.4, 0.8),
+                  (0.8, 0.7, 0.1)]
+        titles = ['High temperature', 'Low temperature', 'Max 2-min wind', 'Precipitation']
+        for plot_num in range(4):
+            if plot_num != 3:
+                unit = 1.
+                decimals = 1
+            else:
+                unit = 0.01
+                decimals = 3
+            plot_histogram(gs1[plot_num], predicted[:, plot_num], unit, facecolor=colors[plot_num],
+                           decimals=decimals, title=titles[plot_num])
+
+        verif_date_str = datetime.strftime(verif_date, '%Y/%m/%d')
+        plt.suptitle('MOS-X probability distributions, %s on %s' % (config['station_id'], verif_date_str))
+        plt.savefig(prob_file, dpi=200)
+
+    plot_probabilities(all_predicted)
+
+
+# %% Upload to WxChallenge, if requested
+
+if upload and write_flag:
+    print('\nUpload requested...')
+    account = config['Upload']['username']
+    server = config['Upload']['server']
+    if account == '' or server == '':
+        print('Invalid username and/or server in config file, aborting')
+        sys.exit(1)
+    directory = '/home/disk/p/wxchallenge/nobackup/wxchall/site_data/'
+    result = os.system('scp %s %s:%s' % (write_file, account, directory))
+    if prob:
+        directory = '/home/disk/p/wxchallenge/public_html/theta_e/'
+        os.system('scp %s %s@%s:%s' % (prob_file, account, server, directory))
+    print('  Upload finished with system exit status %s' % result)
+
+sys.exit(0)

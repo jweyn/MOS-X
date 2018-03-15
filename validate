@@ -1,0 +1,144 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Oct 25 15:43:58 2017
+
+@author: jweyn
+
+Perform cross-validation of the MOS-X model for a range of dates, if specified in MOSX_INFILE.
+"""
+
+import mosx
+import numpy as np
+import os
+import sys
+from optparse import OptionParser
+from datetime import datetime
+import pickle
+
+# Suppress warnings
+import warnings
+
+warnings.filterwarnings("ignore")
+
+
+def get_command_options():
+    # Get the forecast date
+    parser = OptionParser()
+    parser.add_option('-w', '--write', dest='write_flag', action='store_true',
+                      default=False, help='Write a CSV file')
+    default_file = './MOSX_CV.csv'
+    parser.add_option('-f', '--write-file', dest='write_file', action='store',
+                      type='string', default=default_file,
+                      help=('If -w is enabled, write to this file '
+                            '(default %s)' % default_file))
+    (opts, args) = parser.parse_args()
+    return opts, args
+
+
+# %% Figure out the date
+
+options, arguments = get_command_options()
+write_flag, write_file = options.write_flag, options.write_file
+try:
+    config_file = arguments[0]
+except IndexError:
+    print('Required argument (config file) not provided.')
+    sys.exit(1)
+config = mosx.util.get_config(config_file)
+
+cycle = '18'
+
+start_date = datetime.strptime(config['Validate']['start_date'], '%Y%m%d')
+end_date = datetime.strptime(config['Validate']['end_date'], '%Y%m%d')
+
+# Override the INFILE values
+new_start_date = datetime.strftime(start_date, '%Y%m%d')
+new_end_date = datetime.strftime(end_date, '%Y%m%d')
+config['data_start_date'] = new_start_date
+config['data_end_date'] = new_end_date
+
+
+# %% Retrieve data
+
+bufr_file = '%s/%s_CV_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+print('\n--- MOS-X validate: retrieving BUFR data...\n')
+if os.path.isfile(bufr_file):
+    print('Using existing BUFR file %s' % bufr_file)
+    print('If issues occur, delete this file and try again')
+else:
+    print('Using model cycle %sZ' % cycle)
+    mosx.bufr.bufr(config, bufr_file, cycle=cycle)
+
+obs_file = '%s/%s_CV_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+print('\n--- MOS-X validate: retrieving OBS data...\n')
+if os.path.isfile(obs_file):
+    print('Using existing obs file %s' % obs_file)
+    print('If issues occur, delete this file and try again')
+else:
+    mosx.obs.obs(config, obs_file, use_nan_sounding=False)
+
+verif_file = '%s/%s_CV_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+print('\n--- MOS-X validate: retrieving VERIF data...\n')
+if os.path.isfile(verif_file):
+    print('Using existing verif file %s' % verif_file)
+    print('If issues occur, delete this file and try again')
+else:
+    mosx.verification.verification(config, verif_file, use_climo=True)
+
+# %% Format data
+
+predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+print('\n--- MOS-X validate: formatting predictor data...\n')
+all_dates, precip = mosx.train.format_predictors(config, bufr_file, obs_file, None, predictor_file, return_dates=True,
+                                                 return_precip_forecast=True)
+
+# %% Load the input data, verif data, and the estimator
+
+print('\n--- MOS-X validate: calculating forecasts...\n')
+with open(predictor_file, 'rb') as handle:
+    data = pickle.load(handle)
+with open(verif_file, 'rb') as handle:
+    verif = pickle.load(handle)
+with open(config['Model']['estimator_file'], 'rb') as handle:
+    estimator = pickle.load(handle)
+
+predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)
+predicted = estimator.predict(predictors)
+
+# Check for precipitation override
+for day in range(len(all_dates)):
+    print('Day: %s' % all_dates[day])
+    print('  Raw forecast precipitation values:')
+    print(precip[day])
+    if sum(precip[day]) < 0.01:
+        print('  Warning: overriding MOS-X prediction of %0.2f for rain with 0' % predicted[day, 3])
+        predicted[day, 3] = 0.
+    elif predicted[day, 3] > max(precip[day]) or predicted[day, 3] < min(precip[day]):
+        print('Warning: MOS-X prediction for rainfall out of model range; ' +
+              'overriding MOS-X prediction of %0.2f with model mean' % predicted[day, 3])
+        predicted[day, 3] = max(0., np.mean(precip[day] + [predicted[day, 3]]))
+
+# %% Print forecasts!
+
+print('\nDay,verification,forecast')
+for day in range(len(all_dates)):
+    date = all_dates[day]
+    day_verif = [verif[date][v] for v in ['Tmax', 'Tmin', 'Wind', 'Rain']]
+    verif_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(day_verif)
+    fcst_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[day, :4])
+    print('%s,%s,%s' % (date, verif_str, fcst_str))
+
+# %% Write the forecast, if requested
+
+if write_flag:
+    print('\nForecast write requested, writing to file %s' % write_file)
+
+    with open(write_file, 'w') as f:
+        print >> f, 'date,verification,forecast'
+        for day in range(len(all_dates)):
+            date = all_dates[day]
+            day_verif = [verif[date][v] for v in ['Tmax', 'Tmin', 'Wind', 'Rain']]
+            verif_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(day_verif)
+            fcst_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[day, :4])
+            print >> f, ('%s,%s,%s' % (date, verif_str, fcst_str))

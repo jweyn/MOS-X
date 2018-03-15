@@ -1,0 +1,101 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Oct 25 15:43:58 2017
+
+@author: jweyn
+
+Build the estimator for the MOS-X model.
+"""
+
+import sys
+import mosx
+import pickle
+from optparse import OptionParser
+from multiprocessing import Process
+
+
+def get_command_options():
+    parser = OptionParser()
+    parser.add_option('-e', '--use-existing-files', dest='use_existing', action='store_true',
+                      default=False, help='Use existing data files (only if no changes to MOSX_INFILE!)')
+    (opts, args) = parser.parse_args()
+    return opts, args
+
+
+# Get the config dictionary
+
+options, arguments = get_command_options()
+use_existing = options.use_existing
+try:
+    config_file = arguments[0]
+except IndexError:
+    print('Required argument (config file) not provided.')
+    sys.exit(1)
+config = mosx.util.get_config(config_file)
+
+
+# Retrieve data; parallelize BUFR and OBS
+
+bufr_file = '%s/%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'])
+obs_file = '%s/%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'])
+verif_file = '%s/%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'])
+predictor_file = '%s/%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'])
+
+
+def get_bufr():
+    print('\n--- MOS-X build: initiating BUFR data retrieval...\n')
+    # mosx.bufr.bufr(config, bufr_file)
+
+
+def get_obs():
+    print('\n--- MOS-X build: initiating OBS data retrieval...\n')
+    # mosx.obs.obs(config, obs_file)
+
+
+if not use_existing:
+    if __name__ == '__main__':
+        p1 = Process(target=get_bufr)
+        p1.start()
+        p2 = Process(target=get_obs)
+        p2.start()
+        p1.join()
+        p2.join()
+
+    print('\n--- MOS-X build: retrieving VERIF data...\n')
+    # mosx.verification.verification(config, verif_file)
+
+    print('\n--- MOS-X build: formatting predictor and target data...\n')
+    # mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file)
+
+
+# Train the estimator and save it
+
+print('\n--- MOS-X build: generating and training estimator...\n')
+regressor = config['Model']['regressor']
+regressor_args = config['Model']['kwargs']
+train_multi = config['Model']['train_multi']
+ada_boost = config['Model'].get('ada_boost', None)
+
+p_test, t_test = mosx.train.train(config, predictor_file, config['Model']['estimator_file'], test_size=1,
+                                  regressor=regressor, sklearn_kwargs=regressor_args,
+                                  train_individual=train_multi, ada_boost=ada_boost)
+
+
+# Test the predictor
+
+print('Loading estimator file %s' % config['Model']['estimator_file'])
+with open(config['Model']['estimator_file'], 'rb') as handle:
+    estimator = pickle.load(handle)
+
+# Make a prediction
+expected = t_test
+predicted = estimator.predict(p_test)
+
+num_test = t_test.shape[0]
+for t in range(num_test):
+    print('\nSanity check:\nFor day %d, the predicted forecast is' % t)
+    print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[t, :4]))
+    print('  while the verification was')
+    print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(expected[t, :4]))
+

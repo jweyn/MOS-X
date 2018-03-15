@@ -1,0 +1,35 @@
+MOSX_ROOT = string()
+BUFR_ROOT = string()
+SITE_ROOT = string(default='')
+station_id = string(min=4, max=4)
+climo_station_id = string(min=11, max=11)
+lowest_p_level = float()
+data_start_date = string(min=8, max=8)
+data_end_date = string(min=8, max=8)
+is_season = boolean(default=False)
+meso_token = string()
+verbose = boolean(default=False)
+[BUFR]
+    bufr_station_id = string(min=3, max=4, default='')
+    bufr_data_dir = string(default='')
+    bufrgruven = string(default='')
+    models = force_list()
+[Obs]
+    use_soundings = boolean(default=False)
+    sounding_station_id = string(min=3, max=3)
+    sounding_data_dir = string(default='')
+[Model]
+    estimator_file = string()
+    regressor = string(default='ensemble.RandomForestRegressor')
+    train_multi = boolean(default=False)
+    predict_timeseries = boolean(default=False)
+    [[kwargs]]
+[Validate]
+    start_date = string(min=8, max=8)
+    end_date = string(min=8, max=8)
+[Upload]
+    file_type = option('pickle', default='pickle')
+    username = string(default='')
+    server = string(default='')
+    forecast_directory = string(default='~')
+    plot_directory = string(default='~')
