@@ -25,22 +25,16 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
     Retrieves upper-air data and interpolates to pressure levels. If use_nan_sounding is True, then if a retrieval
     error occurs, a blank sounding will be returned instead of an error.
 
-    Input
-    ------
-    date : datetime object of sounding date to retrieve
-    use_nan_sounding : return blank sounding if retrieval error occurs
-    use_existing: looks for existing sounding in sounding_data_dir before retrieving a new file
-    save: save the sounding, if newly retrieved
-
-    Output
-    ------
-    data : dictionary of sounding data. The keys are variables and values are lists of data at each height.
+    :param config:
+    :param date: datetime
+    :param use_nan_sounding: bool: if True, use sounding of NaNs instead of raising an error
+    :param use_existing: bool: preferentially use existing soundings in sounding_data_dir
+    :param save: bool: if True, save processed soundings to sounding_data_dir
+    :return:
     """
-
     variables = ['height', 'temperature', 'dewpoint', 'u_wind', 'v_wind']
 
-    # Define levels for interpolation: same as model data, except omitting
-    # lowest_p_level
+    # Define levels for interpolation: same as model data, except omitting lowest_p_level
     plevs = [600, 750, 850, 925]
     pres_interp = [p for p in plevs if p <= config['lowest_p_level']]
 
@@ -106,10 +100,11 @@ def get_obs_hourly(config, api_dates, vars_api, units):
     """
     Retrieve hourly obs data in a pd dataframe. In order to ensure that there is no missing hourly indices, use
     dataframe.reindex on each retrieved dataframe.
+
     :param api_dates: dates from generate_dates
-    :param vars_api: string formatted for api call var parameter
-    :param units: string formatted for api call units parameter
-    :return:
+    :param vars_api: str: string formatted for api call var parameter
+    :param units: str: string formatted for api call units parameter
+    :return: pd.DataFrame: formatted hourly obs DataFrame
     """
     # Initialize Meso
     m = Meso(token=config['meso_token'])
@@ -186,21 +181,14 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
     Generates observation data from MesoWest and UCAR soundings and saves to a file, which can later be retrieved for
     either training data or model run data.
 
-    Input
-    ------
-    output_file : destination file (pickle)
-    num_hours : number of past surface obs hours to include
-    interval : hourly interval of obs data to keep
-    data_start_date : override start of retrieval (generally not used)
-    data_end_date   : override end of retrieval (generally not used)
-    use_nan_sounding: if any sounding is missing, use a blank sounding of nan values rather than skip the date
-
-    Output
-    ------
-    None. Data written to output_file or "'%s/%s_obs.pkl' % (site_directory, station_id)" if output_file is not
-    provided.
+    :param config:
+    :param output_file: str: output file path
+    :param num_hours: int: number of hours to retrieve obs
+    :param interval: int: retrieve obs every 'interval' hours
+    :param use_nan_sounding: bool: if True, uses a sounding of NaNs rather than omitting a day if sounding is missing
+    :param use_existing_sounding: bool: if True, preferentially uses saved soundings in sounding_data_dir
+    :return:
     """
-
     if output_file is None:
         output_file = '%s/%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'])
 
@@ -221,10 +209,10 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
     # Units
     units = 'temp|f,precip|in,speed|kts'
 
-    # Retrieve data
+    # Retrieve station data
     obs_hourly = get_obs_hourly(config, api_dates, vars_api, units)
 
-    ### Retrieve upper-air sounding data
+    # Retrieve upper-air sounding data
     if config['verbose']:
         print('Retrieving upper-air sounding data...')
     soundings = OrderedDict()
@@ -242,7 +230,7 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
                     soundings.pop(date)
                     break
 
-    ### Create dictionary of days
+    # Create dictionary of days
     if config['verbose']:
         print('Converting to output dictionary...')
     obs_export = OrderedDict({'SFC': OrderedDict(),
@@ -250,14 +238,14 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
     for date in dates:
         if config['Obs']['use_soundings'] and date not in soundings.keys():
             continue
-        # Need to ensure we have 22:5? Z obs
+        # Need to ensure we use the right intervals to have 22:5? Z obs
         start = pd.Timestamp((date - timedelta(hours=num_hours - interval + 2)))
         end = pd.Timestamp((date - timedelta(hours=1)))
         obs_export['SFC'][date] = OrderedDict(obs_hourly.loc[start:end:interval].to_dict(into=OrderedDict))
         if config['Obs']['use_soundings']:
             obs_export['SNDG'][date] = soundings[date]
 
-    ### Export final data
+    # Export final data
     if config['verbose']:
         print('-> Exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
@@ -271,14 +259,9 @@ def process(config, obs):
     Returns a numpy array of obs for use in mosx_predictors. The first dimension is date; all other dimensions are
     serialized.
 
-    Input
-    ------
-    obs : dictionary of obs data produced by mosx_obs
-    timedim : number of observations expected for each verification date
-
-    Output
-    ------
-    obs_array : time-by-x array of surface and sounding observation data
+    :param config:
+    :param obs: dict: dictionary of processed obs data
+    :return:
     """
     if config['verbose']:
         print('Processing array for obs data...')

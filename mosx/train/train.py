@@ -19,27 +19,18 @@ def train(config, predictor_file, output_file=None, no_obs=False, no_models=Fals
     Generate and train a scikit-learn machine learning estimator. The estimator object is saved as a pickle so that it
     may be imported and used for predictions at any time.
 
-    Input
-    ------
-    predictor_file : full path to pickled file of predictor array from
-                     mosx_predictors
-    output_file    : full path to destination pickled file
-    no_obs         : train the estimator with only model data
-    no_models      : train the estimator with only obs data
-    test_size      : number of predictor samples set aside to do initial sanity check
-    regressor      : string of sklearn module to use as a regressor
-    sklearn_kwargs : kwargs dictionary passed to the random forest regressor
-    train_individual : train an individual estimator for each weather parameter
-    ada_boost      : ignored if None. Otherwise, should be a dictionary of kwargs passed to AdaBoostRegressor.
-
-    Output
-    ------
-    p_test : array of predictors for model test
-    t_test : array of verifications for model test
-    Estimator written to output_file or "'%s/%s_mosx.pkl' % (site_directory,
-    station_id)" if output_file is not provided.
+    :param config:
+    :param predictor_file: str: full path to saved file of predictor data
+    :param output_file: str: full path to output model file
+    :param no_obs: bool: if True, generates the model with no OBS data
+    :param no_models: bool: if True, generates the model with no BUFR data
+    :param test_size: int: if > 0, returns a subset of the training data of size 'test_size' to test on
+    :param regressor: str: name of the scikit-learn base regressor object
+    :param sklearn_kwargs: dict: keyword args passed to the scikit-learn regressor
+    :param train_individual: bool: if True, trains a separate model for each output variable
+    :param ada_boost: dict: if not None, uses an Ada boosting meta-estimator with kwargs specified here
+    :return:
     """
-
     Regressor = get_object('sklearn.%s' % regressor)
     if config['verbose']:
         print('Using sklearn.%s as estimator...' % regressor)
@@ -133,5 +124,4 @@ def train(config, predictor_file, output_file=None, no_obs=False, no_models=Fals
 
     if test_size > 0:
         return p_test, t_test
-
     return

@@ -1,11 +1,12 @@
 #!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
+#
+# See the file LICENSE for your rights.
+#
+
 """
-Created on Wed Oct 25 15:43:58 2017
-
-@author: jweyn
-
-Perform cross-validation of the MOS-X model for a range of dates, if specified in MOSX_INFILE.
+Perform cross-validation of the MOS-X model for a range of dates specified in the config.
 """
 
 import mosx
@@ -18,28 +19,26 @@ import pickle
 
 # Suppress warnings
 import warnings
-
 warnings.filterwarnings("ignore")
 
 
 def get_command_options():
     # Get the forecast date
     parser = OptionParser()
-    parser.add_option('-w', '--write', dest='write_flag', action='store_true',
-                      default=False, help='Write a CSV file')
+    parser.add_option('-o', '--overwrite', dest='overwrite', action='store_true', default=False,
+                      help='Overwrite any existing BUFR, obs, and verification files')
+    parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False, help='Write a CSV file')
     default_file = './MOSX_CV.csv'
-    parser.add_option('-f', '--write-file', dest='write_file', action='store',
-                      type='string', default=default_file,
-                      help=('If -w is enabled, write to this file '
-                            '(default %s)' % default_file))
+    parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default=default_file,
+                      help=('If -w is enabled, write to this file (default %s)' % default_file))
     (opts, args) = parser.parse_args()
     return opts, args
 
 
-# %% Figure out the date
+# Figure out the date
 
 options, arguments = get_command_options()
-write_flag, write_file = options.write_flag, options.write_file
+overwrite, write_flag, write_file = options.overwrite, options.write_flag, options.write_file
 try:
     config_file = arguments[0]
 except IndexError:
@@ -59,11 +58,11 @@ config['data_start_date'] = new_start_date
 config['data_end_date'] = new_end_date
 
 
-# %% Retrieve data
+# Retrieve data
 
 bufr_file = '%s/%s_CV_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X validate: retrieving BUFR data...\n')
-if os.path.isfile(bufr_file):
+if os.path.isfile(bufr_file) and not overwrite:
     print('Using existing BUFR file %s' % bufr_file)
     print('If issues occur, delete this file and try again')
 else:
@@ -72,7 +71,7 @@ else:
 
 obs_file = '%s/%s_CV_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X validate: retrieving OBS data...\n')
-if os.path.isfile(obs_file):
+if os.path.isfile(obs_file) and not overwrite:
     print('Using existing obs file %s' % obs_file)
     print('If issues occur, delete this file and try again')
 else:
@@ -80,26 +79,29 @@ else:
 
 verif_file = '%s/%s_CV_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X validate: retrieving VERIF data...\n')
-if os.path.isfile(verif_file):
+if os.path.isfile(verif_file) and not overwrite:
     print('Using existing verif file %s' % verif_file)
     print('If issues occur, delete this file and try again')
 else:
     mosx.verification.verification(config, verif_file, use_climo=True)
 
-# %% Format data
+
+# Format data
 
 predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X validate: formatting predictor data...\n')
 all_dates, precip = mosx.train.format_predictors(config, bufr_file, obs_file, None, predictor_file, return_dates=True,
                                                  return_precip_forecast=True)
 
-# %% Load the input data, verif data, and the estimator
+
+# Load the input data, verif data, and the estimator
 
 print('\n--- MOS-X validate: calculating forecasts...\n')
 with open(predictor_file, 'rb') as handle:
     data = pickle.load(handle)
 with open(verif_file, 'rb') as handle:
     verif = pickle.load(handle)
+print('Loading estimator %s...' % config['Model']['estimator_file'])
 with open(config['Model']['estimator_file'], 'rb') as handle:
     estimator = pickle.load(handle)
 
@@ -119,7 +121,8 @@ for day in range(len(all_dates)):
               'overriding MOS-X prediction of %0.2f with model mean' % predicted[day, 3])
         predicted[day, 3] = max(0., np.mean(precip[day] + [predicted[day, 3]]))
 
-# %% Print forecasts!
+
+# Print forecasts!
 
 print('\nDay,verification,forecast')
 for day in range(len(all_dates)):
@@ -129,7 +132,8 @@ for day in range(len(all_dates)):
     fcst_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[day, :4])
     print('%s,%s,%s' % (date, verif_str, fcst_str))
 
-# %% Write the forecast, if requested
+
+# Write the forecast, if requested
 
 if write_flag:
     print('\nForecast write requested, writing to file %s' % write_file)

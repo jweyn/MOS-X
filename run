@@ -1,11 +1,12 @@
 #!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
+#
+# See the file LICENSE for your rights.
+#
+
 """
-Created on Wed Oct 25 15:43:58 2017
-
-@author: jweyn
-
-Run the MOS-X model either for 23Z on any given day or for tomorrow.
+Run the MOS-X model either initialized at 23Z on any given day or for tomorrow.
 """
 
 import os
@@ -25,19 +26,16 @@ warnings.filterwarnings("ignore")
 
 def get_command_options():
     parser = OptionParser()
-    parser.add_option('-d', '--date', dest='datestr', action='store', 
-                      type='string', default='tomorrow', 
+    parser.add_option('-d', '--date', dest='datestr', action='store', type='string', default='tomorrow',
                       help='Date to run model for, YYYYMMDD (default=tomorrow)')
-    parser.add_option('-w', '--write', dest='write_flag', action='store_true', 
-                      default=False, help='Write to a pickle file')
-    parser.add_option('-f', '--write-file', dest='write_file', action='store', 
-                      type='string', default='default',
-                      help=('If -w is enabled, write to this file '
-                            '(default {site_data}/{stid}_MOSX_fcst.pkl)'))
-    parser.add_option('-u', '--upload', dest='upload', action='store_true', 
-                      default=False, help='Upload to WxChallenge account')
-    parser.add_option('-p', '--probabilities', dest='prob', action='store_true',
-                      default=False, help='Calculate probability distributions')
+    parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False,
+                      help='Write to a pickle file')
+    parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default='default',
+                      help='If -w is enabled, write to this file (default $SITE_ROOT/$(station_id)_MOSX_fcst.pkl)')
+    parser.add_option('-u', '--upload', dest='upload', action='store_true', default=False,
+                      help='Upload upload forecast output to server in config')
+    parser.add_option('-p', '--probabilities', dest='prob', action='store_true', default=False,
+                      help='Calculate and plot probability distributions')
     (opts, args) = parser.parse_args()
     return opts, args
 
@@ -64,7 +62,7 @@ def dewpoint(T, RH):
     return CtoF(TD)
 
 
-# %% Figure out the date
+# Figure out the date
 
 options, arguments = get_command_options()
 datestr, write_flag, write_file, upload, prob = (options.datestr, options.write_flag, options.write_file, 
@@ -90,12 +88,12 @@ else:
 
 # Override the INFILE values
 new_start_date = datetime.strftime(verif_date, '%Y%m%d')
-new_end_date   = datetime.strftime(verif_date, '%Y%m%d')
+new_end_date = datetime.strftime(verif_date, '%Y%m%d')
 config['data_start_date'] = new_start_date
 config['data_end_date'] = new_end_date
 
 
-# %% Retrieve data
+# Retrieve data
 
 bufr_file = '%s/%s_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X run: retrieving BUFR data...\n')
@@ -107,10 +105,9 @@ print('\n--- MOS-X run: retrieving OBS data...\n')
 mosx.obs.obs(config, obs_file, use_nan_sounding=True, use_existing_sounding=False)
 
 
-# %% Format data
+# Format data
 
-predictor_file = '%s/%s_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], 
-                                              new_end_date)
+predictor_file = '%s/%s_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X run: formatting predictor data...\n')
 precip = mosx.train.format_predictors(config, bufr_file, obs_file, None, predictor_file, return_precip_forecast=True)
 precip = precip[0]
@@ -118,7 +115,7 @@ print('Raw forecast precipitation values:')
 print(precip)
 
 
-# %% Load the input data and the estimator
+# Load the input data and the estimator
 
 print('\n--- MOS-X run: calculating forecast...\n')
 with open(predictor_file, 'rb') as handle:
@@ -128,7 +125,7 @@ with open(config['Model']['estimator_file'], 'rb') as handle:
     estimator = pickle.load(handle)
 
 predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)
-predicted  = np.squeeze(estimator.predict(predictors))
+predicted = np.squeeze(estimator.predict(predictors))
 
 # Check for precipitation override
 if sum(precip) < 0.01:
@@ -170,7 +167,8 @@ if config['Model']['predict_timeseries']:
     predicted_timeseries = pd.DataFrame(predicted_array, index=times, columns=variables)
     predicted_timeseries = predicted_timeseries.round(round_dict)
 
-# %% Print forecast!
+
+# Print forecast!
 
 print('\nFor day %s at %s, the predicted forecast is' % (new_end_date, 
                                                          config['station_id']))
@@ -190,7 +188,7 @@ if config['Model']['predict_timeseries']:
     print(predicted_timeseries)
 
 
-# %% Write the forecast, if requested
+# Write the forecast, if requested
 
 if write_flag:
     if write_file == 'default':
@@ -204,9 +202,9 @@ if write_flag:
         data = OrderedDict()
     
     data[verif_date] = {
-                        'high'  : np.round(predicted[0]),
-                        'low'   : np.round(predicted[1]),
-                        'wind'  : np.round(predicted[2]),
+                        'high': np.round(predicted[0]),
+                        'low': np.round(predicted[1]),
+                        'wind': np.round(predicted[2]),
                         'precip': np.round(predicted[3], 2)
                        }
 
@@ -217,7 +215,7 @@ if write_flag:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
 
-# %% Make plots of probability distributions
+# Make plots of probability distributions
 
 if prob:
     # Imports
@@ -287,7 +285,7 @@ if prob:
     plot_probabilities(all_predicted)
 
 
-# %% Upload to WxChallenge, if requested
+# Upload, if requested
 
 if upload and write_flag:
     print('\nUpload requested...')
@@ -296,11 +294,9 @@ if upload and write_flag:
     if account == '' or server == '':
         print('Invalid username and/or server in config file, aborting')
         sys.exit(1)
-    directory = '/home/disk/p/wxchallenge/nobackup/wxchall/site_data/'
-    result = os.system('scp %s %s:%s' % (write_file, account, directory))
+    result = os.system('scp %s %s:%s' % (write_file, account, config['Upload']['forecast_directory']))
     if prob:
-        directory = '/home/disk/p/wxchallenge/public_html/theta_e/'
-        os.system('scp %s %s@%s:%s' % (prob_file, account, server, directory))
+        os.system('scp %s %s@%s:%s' % (prob_file, account, server, config['Upload']['plot_directory']))
     print('  Upload finished with system exit status %s' % result)
 
 sys.exit(0)

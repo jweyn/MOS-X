@@ -1,10 +1,11 @@
 #!/usr/bin/env python2
-# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
+#
+# See the file LICENSE for your rights.
+#
+
 """
-Created on Tue Dec 18 10:38:54 2017
-
-@author: jweyn
-
 Clean the archived files for a particular site.
 """
 
@@ -16,19 +17,18 @@ from optparse import OptionParser
 
 def get_command_options():
     parser = OptionParser()
-    parser.add_option('-s', '--station-id', dest='station_id', action='store',
-                      type='string', default='',
+    parser.add_option('-s', '--station-id', dest='station_id', action='store', type='string', default='',
                       help='Station ID to clean (required!)')
-    parser.add_option('-d', '--no-remove-site-data', dest='data_flag', action='store_true',
-                      default=False, help="Don't delete files in site_data")
-    parser.add_option('-b', '--remove-bufr', dest='bufr_flag', action='store_true',
-                      default=False, help='Delete archived BUFKIT files')
-    parser.add_option('-u', '--remove-upper-air', dest='sndg_flag', action='store_true',
-                      default=False, help='Delete archived sounding (upper air) files')
-    parser.add_option('-m', '--remove-model', dest='model_flag', action='store_true',
-                      default=False, help='Delete estimator files *mosx*.pkl')
-    parser.add_option('-v', '--verbose', dest='verbose', action='store_true',
-                      default=False, help='Print some extra statements')
+    parser.add_option('-d', '--no-remove-site-data', dest='data_flag', action='store_true', default=False,
+                      help="Don't delete files in site_data")
+    parser.add_option('-b', '--remove-bufr', dest='bufr_flag', action='store_true', default=False,
+                      help='Delete archived BUFKIT files')
+    parser.add_option('-u', '--remove-upper-air', dest='sndg_flag', action='store_true', default=False,
+                      help='Delete archived sounding (upper air) files')
+    parser.add_option('-m', '--remove-model', dest='model_flag', action='store_true', default=False,
+                      help='Delete estimator files *mosx*.pkl')
+    parser.add_option('-v', '--verbose', dest='verbose', action='store_true', default=False,
+                      help='Print some extra statements')
     (opts, args) = parser.parse_args()
     return opts, args
 

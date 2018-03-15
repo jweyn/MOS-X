@@ -5,7 +5,7 @@
 #
 
 """
-Methods for processing OBS data.
+Methods for formatting predictor data and training scikit-learn models.
 """
 
 from train import train

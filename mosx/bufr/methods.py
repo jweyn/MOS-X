@@ -21,31 +21,22 @@ from scipy import interpolate
 def bufkit_parser_time_height(config, file_name, interval=1, start_dt=None, end_dt=None):
     """
     By Luke Madaus. Modified by jweyn.
-
     Returns a dictionary of time-height profiles from a BUFKIT file, with profiles interpolated to a basic set of
     pressure levels.
 
-    Input
-    ------
-    file     : full path to BUFKIT file to read
-    interval : interval at which data are output, in hours; minimum 1
-    start_dt : datetime object of starting time for output
-    end_dt   : datetime object of ending time for output
-    lowest_p_level : lowest pressure level in the interpolation
-
-    Output
-    ------
-    profile : dictionary of time-height values. The primary keys are datetime objects of model valid times; secondary
-              keys are variable names. The objects are lists of vertical profiles.
+    :param config:
+    :param file_name: str: full path to bufkit file name
+    :param interval: int: process data every 'interval' hours
+    :param start_dt: datetime: starting time for data processing
+    :param end_dt: datetime: ending time for data processing
+    :return: dict: ugly dictionary of processed values
     """
-
     # Open the file
     infile = open(file_name, 'r')
 
     profile = OrderedDict()
 
-    # Find the block that contains the description of
-    # what everything is (header information)
+    # Find the block that contains the description of what everything is (header information)
     block_lines = []
     inblock = False
     block_found = False
@@ -120,7 +111,6 @@ def bufkit_parser_time_height(config, file_name, interval=1, start_dt=None, end_
                         temp_vars[name].append(float(val))
 
             # Unfortunately, bufkit values aren't always uniformly distributed.
-            # Have to interpolate
             final_vars = OrderedDict()
             cur_plevs = temp_vars['PRES']
             cur_plevs.reverse()
@@ -158,25 +148,16 @@ def bufkit_parser_time_height(config, file_name, interval=1, start_dt=None, end_
 def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
     """
     By Luke Madaus. Modified by jweyn.
-
     Returns a dictionary of surface data from a BUFKIT file.
 
-    Input
-    ------
-    file     : full path to BUFKIT file to read
-    interval : interval at which data are output, in hours; minimum 1
-    start_dt : datetime object of starting time for output
-    end_dt   : datetime object of ending time for output
-
-    Output
-    ------
-    sfc_dict : dictionary of surface values. The primary keys are datetime objects of model valid times; secondary
-               keys are variable names. The objects are float values.
+    :param file_name: str: full path to bufkit file name
+    :param interval: int: process data every 'interval' hours
+    :param start_dt: datetime: starting time for data processing
+    :param end_dt: datetime: ending time for data processing
+    :return: dict: ugly dictionary of processed values
     """
-
     # Load the file
     infile = open(file_name, 'r')
-
     sfc_dict = OrderedDict()
 
     block_lines = []
@@ -217,8 +198,7 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
     # Compile this re_string for more efficient re searches
     block_expr = re.compile(re_string)
 
-    # Now get corresponding indices of the
-    # variables we need
+    # Now get corresponding indices of the variables we need
     full_line = ''
     for r in block_lines:
         full_line = full_line + r[:-2] + ' '
@@ -226,8 +206,7 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
     varlist = re.split('[ /]', full_line)
 
     with open(file_name) as infile:
-        # Now loop through all blocks that match the
-        # search pattern we defined above
+        # Now loop through all blocks that match the search pattern we defined above
         blocknum = -1
         # For rain total in missing times
         temp_rain = 0.
@@ -310,19 +289,12 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
 
 def bufr_retrieve(bufr, bufarg):
     """
-    Retrieve BUFR files.
+    Call bufrgruven to retrieve BUFR files.
 
-    Input
-    ------
-    bufr   : full path to the system bufr_gruven.pl command
-    bufarg : dictionary of other parameters passed to the BUFR command, each
-             in {'option' : 'value'} string format.
-
-    Output
-    ------
-    result : system exit status
+    :param bufr: str: bufrgruven executable path
+    :param bufarg: dict: dictionary of arguments passed to bufrgruven
+    :return:
     """
-
     argstring = ''
     for key, value in bufarg.items():
         argstring += ' --%s %s' % (key, value)
@@ -335,18 +307,10 @@ def bufr(config, output_file=None, cycle='18'):
     Generates model data from BUFKIT profiles and saves to a file, which can later be retrieved for either training
     data or model run data.
 
-    Input
-    ------
-
-    output_file : destination file (pickle)
-    cycle       : model cycle to use with bufr (e.g., '18' for 18Z)
-    data_start_date : override start of retrieval (generally not used)
-    data_end_date   : override end of retrieval (generally not used)
-
-    Output
-    ------
-    None. Data written to output_file or "'%s/%s_bufr.pkl' % (site_directory, station_id)" if output_file is not
-    provided.
+    :param config:
+    :param output_file: str: output file path
+    :param cycle: str: model cycle (init hour)
+    :return:
     """
     bufr_station_id = config['BUFR']['bufr_station_id']
     # Base arguments dictionary. dset and date will be modified iteratively.
@@ -433,7 +397,7 @@ def bufr(config, output_file=None, cycle='18'):
                     model_names[m], bufarg['date']))
                 missing_dates.append((date, model_names[m]))
 
-    ### Process data
+    # Process data
     print('\n')
     bufr_dict = OrderedDict({'PROF': OrderedDict(), 'SFC': OrderedDict(), 'DAY': OrderedDict()})
     for model in model_names:
@@ -466,7 +430,7 @@ def bufr(config, output_file=None, cycle='18'):
             bufr_dict['SFC'][model][verif_date] = sfc
             bufr_dict['DAY'][model][verif_date] = daily
 
-    ### Export data
+    # Export data
     if output_file is None:
         output_file = '%s/%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'])
     print('-> Exporting to %s' % output_file)
@@ -481,16 +445,11 @@ def process(config, bufr, advection_diagnostic=True):
     Imports the data contained in a bufr dictionary and returns a time-by-x numpy array for use in mosx_predictors. The
     first dimension is date; all other dimensions are first extracted using get_array and then one-dimensionalized.
 
-    Input
-    ------
-    bufr : dictionary of model data produced by mosx_bufkit
-    advection_diagnostic : calculate advection index from model height data
-
-    Output
-    ------
-    bufr_out : time-by-x array of bufr data
+    :param config:
+    :param bufr: dict: dictionary of processed BUFR data
+    :param advection_diagnostic: bool: if True, add temperature advection diagnostic to the data
+    :return: ndarray: array of formatted BUFR predictor values
     """
-
     if config['verbose']:
         print('Processing array for BUFR data...')
     # PROF part of the BUFR data
@@ -537,7 +496,7 @@ def temp_advection(bufr):
     IMPORTANT: expects the keys of each model to match dates; i.e., expects bufr output from find_matching_dates. This
     is to ensure num_samples is correct.
 
-    :param bufr: bufr data dictionary
+    :param bufr: dict: dictionary of processed BUFR data
     :return: advection_array: array of num_samples-by-num_features of advection diagnostic
     """
     bufr_prof = bufr['PROF']
@@ -581,4 +540,3 @@ def temp_advection(bufr):
         sample += 1
 
     return advection_array
-

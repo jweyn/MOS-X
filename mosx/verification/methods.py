@@ -29,6 +29,9 @@ def cf6_parser(config):
     Generates wind verification values from climate CF6 files stored in SITE_ROOT. These files can be generated
     externally by get_cf6_files.py. This function is not necessary if climo data from climo_wind is found, except for
     recent values which may not be in the NCDC database yet.
+
+    :param config:
+    :return: dict: wind values from CF6 files
     """
 
     if config['verbose']:
@@ -50,7 +53,7 @@ def cf6_parser(config):
         infile = open('%s/%s' % (config['SITE_ROOT'], file), 'r')
         for line in infile:
             matcher = re.compile(
-                '( \d{1}|\d{2}) ( \d{2}|-\d{2}|  \d{1}| -\d{1}|\d{3})')
+                '( \d|\d{2}) ( \d{2}|-\d{2}|  \d| -\d|\d{3})')
             if matcher.match(line):
                 # We've found an ob line!
                 lsp = line.split()
@@ -68,9 +71,11 @@ def cf6_parser(config):
 
 def climo_wind(config, dates=None):
     """
-    This function is used internally only.
+     Fetches climatological wind data using ulmo package to retrieve NCDC archives.
 
-    Fetches climatological wind data using ulmo package to retrieve NCDC archives.
+    :param config:
+    :param dates: list of datetime objects
+    :return: dict: dictionary of wind values
     """
     import ulmo
 
@@ -96,18 +101,12 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
     Generates verification data from MesoWest and saves to a file, which is used to train the model and check test
     results.
 
-    Input
-    ------
-    output_file : destination file (pickle)
-    data_start_date : override start of retrieval (generally not used)
-    data_end_date   : override end of retrieval (generally not used)
-
-    Output
-    ------
-    None. Data written to output_file or "'%s/%s_verif.pkl' % (SITE_ROOT, station_id)" if output_file is not
-    provided.
+    :param config:
+    :param output_file: str: path to output file
+    :param use_cf6: bool: if True, uses wind values from CF6 files
+    :param use_climo: bool: if True, uses wind values from NCDC climatology
+    :return:
     """
-
     if output_file is None:
         output_file = '%s/%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'])
 
@@ -330,7 +329,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
     obs_daily = obs_daily.rename(columns={datename: 'date_time'})
     obs_daily = obs_daily.set_index('date_time')
 
-    ### Export final data
+    # Export final data
     if config['verbose']:
         print('-> Exporting to %s' % output_file)
     export_cols = ['Tmax', 'Tmin', 'Wind', 'Rain']
@@ -366,16 +365,10 @@ def process(config, verif):
     Returns a numpy array of verification data for use in mosx_predictors. The first dimension is date, the second is
     variable.
 
-    Input
-    ------
-    verif : dictionary of verification data produced by mosx_verif
-
-    Output
-    ------
-    verif_array : time-by-var array of verification data
-
+    :param config:
+    :param verif: dict: dictionary of processed verification data; may be None
+    :return: ndarray: array of processed verification targets
     """
-
     if verif is not None:
         if config['verbose']:
             print('Processing array for verification data...')

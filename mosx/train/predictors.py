@@ -21,24 +21,15 @@ def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None,
     Generates a complete date-by-x array of data for ingestion into the machine learning estimator. verif_file may be
     None if creating a set to run the model.
 
-    Input
-    ------
-    bufr_file   : full path to pickled file of bufr data from mosx_bufkit
-    obs_file    : full path to pickled file of obs data from mosx_obs
-    verif_file  : full path to pickled file of verif data from mosx_verif
-    output_file : destination file (pickle)
-    return_dates: return the dates used in making predictors
-    return_precip_forecast : return the raw model precipitation forecasts to allow the prediction to override the
-                             MOS-X result.
-
-    Output
-    ------
-    precip : list of raw bufr model precipitation totals
-
-    Data written to output_file or "'%s/%s_predictors.pkl' % (site_directory, station_id)" if output_file is not
-    provided.
+    :param config:
+    :param bufr_file: str: full path to the saved file of BUFR data
+    :param obs_file: str: full path to the saved file of OBS data
+    :param verif_file: str: full path to the saved file of VERIF data
+    :param output_file: str: full path to output predictors file
+    :param return_dates: if True, returns all of the matching dates used to produce the predictor arrays
+    :param return_precip_forecast: if True, returns the raw precipitation data from BUFR models, to compare to MOS-X
+    :return: optionally a list of dates and a list of lists of precipitation values
     """
-
     bufr, obs, verif = unpickle(bufr_file, obs_file, verif_file)
     bufr, obs, verif, all_dates = find_matching_dates(bufr, obs, verif, return_data=True)
     bufr_array = mosx.bufr.process(config, bufr)
