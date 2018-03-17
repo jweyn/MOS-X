@@ -38,10 +38,10 @@ config = mosx.util.get_config(config_file)
 
 # Retrieve data; parallelize BUFR and OBS
 
-bufr_file = '%s/%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'])
-obs_file = '%s/%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'])
-verif_file = '%s/%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'])
-predictor_file = '%s/%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'])
+bufr_file = '%s/%s_bufr_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+obs_file = '%s/%s_obs_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+verif_file = '%s/%s_verif_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+predictor_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
 
 
 def get_bufr():
@@ -75,12 +75,12 @@ if not use_existing:
 print('\n--- MOS-X build: generating and training estimator...\n')
 regressor = config['Model']['regressor']
 regressor_args = config['Model']['kwargs']
-train_multi = config['Model']['train_multi']
+train_individual = config['Model']['train_individual']
 ada_boost = config['Model'].get('ada_boost', None)
 
 p_test, t_test = mosx.train.train(config, predictor_file, config['Model']['estimator_file'], test_size=1,
                                   regressor=regressor, sklearn_kwargs=regressor_args,
-                                  train_individual=train_multi, ada_boost=ada_boost)
+                                  train_individual=train_individual, ada_boost=ada_boost)
 
 
 # Test the predictor
@@ -99,4 +99,3 @@ for t in range(num_test):
     print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[t, :4]))
     print('  while the verification was')
     print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(expected[t, :4]))
-

@@ -73,7 +73,10 @@ def walk_kwargs(section, key):
 
 def get_config(config_path):
     """
-    Retrieve the config dictionary from config_path.
+    Retrieve the config object from config_path.
+
+    :param config_path: str: full path to config file
+    :return:
     """
     import configobj
     from validate import Validator
@@ -84,8 +87,11 @@ def get_config(config_path):
     try:
         config = configobj.ConfigObj(config_path, configspec=config_spec, file_error=True)
     except IOError:
-        print('Error: unable to open configuration file %s' % config_path)
-        raise
+        try:
+            config = configobj.ConfigObj(config_path+'.config', configspec=config_spec, file_error=True)
+        except IOError:
+            print('Error: unable to open configuration file %s' % config_path)
+            raise
     except configobj.ConfigObjError as e:
         print('Error while parsing configuration file %s' % config_path)
         print("*** Reason: '%s'" % e)
@@ -155,53 +161,20 @@ def get_object(module_class):
     return mod
 
 
-def to_bool(x):
-    """Convert an object to boolean.
-
-    Examples:
-    >>> print to_bool('TRUE')
-    True
-    >>> print to_bool(True)
-    True
-    >>> print to_bool(1)
-    True
-    >>> print to_bool('FALSE')
-    False
-    >>> print to_bool(False)
-    False
-    >>> print to_bool(0)
-    False
-    >>> print to_bool('Foo')
-    Traceback (most recent call last):
-    ValueError: Unknown boolean specifier: 'Foo'.
-    >>> print to_bool(None)
-    Traceback (most recent call last):
-    ValueError: Unknown boolean specifier: 'None'.
-
-    This function (c) Tom Keffer, weeWX.
-    """
-    try:
-        if x.lower() in ['true', 'yes']:
-            return True
-        elif x.lower() in ['false', 'no']:
-            return False
-    except AttributeError:
-        pass
-    try:
-        return bool(int(x))
-    except (ValueError, TypeError):
-        pass
-    raise ValueError("Unknown boolean specifier: '%s'." % x)
-
-
 def generate_dates(config, api=False, start_date=None, end_date=None, api_end_hour=0):
     """
     Returns all of the dates requested from the config. If api is True, then returns a list of (start_date, end_date)
     tuples split by year in strings formatted for the MesoWest API call. If api is False, then returns a list of all
     dates as datetime objects. start_date and end_date are available as options as certain calls require addition of
     some data for prior days.
-    """
 
+    :param config:
+    :param api: bool: if True, returns dates formatted for MesoWest API call
+    :param start_date: str: starting date in config file format (YYYYMMDD)
+    :param end_date: str: ending date in config file format (YYYYMMDD)
+    :param api_end_hour: int: last hour of last day in an API call, useful for getting up to 6Z data
+    :return:
+    """
     if start_date is None:
         start_date = datetime.strptime(config['data_start_date'], '%Y%m%d')
     if end_date is None:
@@ -257,20 +230,12 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
     Finds dates which match in all three dictionaries. If return_data is True, returns the input dictionaries with only
     common dates retained. verif may be None if running the model.
 
-    Input
-    ------
-    bufr  : dictionary of model data produced by mosx_bufkit
-    obs   : dictionary of obs data produced by mosx_obs
-    verif : dictionary of verification data produced by mosx_verif
-    return_data : if True, the bufr, obs, and verif dictionaries will be returned with all non-matching dates
-                  popped out.
-
-    Output
-    ------
-    all_dates : sorted list of all matching dates
-    bufr, obs, verif : see return_data above.
+    :param bufr: dict: dictionary of processed BUFR data
+    :param obs: dict: dictionary of processed OBS data
+    :param verif: dict: dictionary of processed VERIFICATION data
+    :param return_data: bool: if True, returns edited data dictionaries containing only matching dates' data
+    :return: list of dates[, new BUFR, OBS, and VERIF dictionaries]
     """
-
     obs_dates = obs['SFC'].keys()
     if verif is not None:
         verif_dates = verif.keys()
@@ -310,8 +275,10 @@ def get_array(dictionary):
     Transforms a nested dictionary into an nd numpy array, assuming that each nested sub-dictionary has the same
     structure and that the values elements of the innermost dictionary is either a list or a float value. Function
     _get_array is its recursive sub-function.
-    """
 
+    :param dictionary:
+    :return:
+    """
     dim_list = []
     d = dictionary
     while isinstance(d, dict):
@@ -342,9 +309,13 @@ def _get_array(dictionary, out_array):
 
 def unpickle(bufr_file, obs_file, verif_file):
     """
-    Shortcut functino to unpickle bufr, obs, and verif files all at once. verif_file may be none if running the model.
-    """
+    Shortcut function to unpickle bufr, obs, and verif files all at once. verif_file may be None if running the model.
 
+    :param bufr_file: str: full path to pickled BUFR data file
+    :param obs_file: str: full path to pickled OBS data file
+    :param verif_file: str: full path to pickled VERIFICATION data file
+    :return:
+    """
     print('Loading BUFKIT data from %s...' % bufr_file)
     with open(bufr_file, 'rb') as handle:
         bufr = pickle.load(handle)
@@ -358,4 +329,3 @@ def unpickle(bufr_file, obs_file, verif_file):
     else:
         verif = None
     return bufr, obs, verif
-

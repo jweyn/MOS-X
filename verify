@@ -174,7 +174,7 @@ config['data_end_date'] = new_end_date
 
 #%% Retrieve data
 
-bufr_file = '%s/%s_verif_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+bufr_file = '%s/%s_verify_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X verify: retrieving BUFR data...\n')
 print('Using model cycle %sZ' % cycle)
 if os.path.isfile(bufr_file) and not options.overwrite:
@@ -184,7 +184,7 @@ else:
     print('Using model cycle %sZ' % cycle)
     mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
-obs_file = '%s/%s_verif_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+obs_file = '%s/%s_verify_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X verify: retrieving OBS data...\n')
 if os.path.isfile(obs_file) and not options.overwrite:
     print('Using existing obs file %s' % obs_file)
@@ -193,7 +193,7 @@ else:
     mosx.obs.obs(config, obs_file, use_nan_sounding=False)
 
 if not options.no_verif_flag:
-    verif_file = '%s/%s_verif_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    verif_file = '%s/%s_verify_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
     print('\n--- MOS-X verify: retrieving VERIF data...\n')
     if os.path.isfile(verif_file) and not options.overwrite:
         print('Using existing verif file %s' % verif_file)
@@ -206,7 +206,7 @@ else:
 
 # Format data
 
-predictor_file = '%s/%s_verif_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], 
+predictor_file = '%s/%s_verify_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'],
                                               new_end_date)
 print('\n--- MOS-X run: formatting predictor data...\n')
 all_dates, precip = mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file,

@@ -21,7 +21,7 @@ verbose = boolean(default=False)
 [Model]
     estimator_file = string()
     regressor = string(default='ensemble.RandomForestRegressor')
-    train_multi = boolean(default=False)
+    train_individual = boolean(default=False)
     predict_timeseries = boolean(default=False)
     [[kwargs]]
 [Validate]

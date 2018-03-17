@@ -144,17 +144,25 @@ if prob:
     imputer = estimator.named_steps['imputer']
     forest = estimator.named_steps['regressor']
     predictors = imputer.transform(predictors)
-    if config['Model']['train_multi']:
+    if config['Model']['train_individual']:
         num_trees = len(forest.estimators_[0].estimators_)
         all_predicted = np.zeros((num_trees, 4))
         for v in range(4):
             for t in range(num_trees):
-                all_predicted[t, v] = forest.estimators_[v].estimators_[t].predict(predictors)
+                try:
+                    all_predicted[t, v] = forest.estimators_[v].estimators_[t].predict(predictors)
+                except AttributeError:
+                    # Work around an error in sklearn where GBTrees have length-1 ndarrays...
+                    all_predicted[t, v] = forest.estimators_[v].estimators_[t][0].predict(predictors)
     else:
         num_trees = len(forest.estimators_)
         all_predicted = np.zeros((num_trees, 4))
         for t in range(num_trees):
-            all_predicted[t, :] = forest.estimators_[t].predict(predictors)[:4]
+            try:
+                all_predicted[t, :] = forest.estimators_[t].predict(predictors)[:4]
+            except AttributeError:
+                # Work around an error in sklearn where GBTrees have length-1 ndarrays...
+                all_predicted[t, :] = forest.estimators_[t][0].predict(predictors)[:4]
     predicted_std = np.std(all_predicted, axis=0)
 
 if config['Model']['predict_timeseries']:
@@ -293,10 +301,8 @@ if upload and write_flag:
     server = config['Upload']['server']
     if account == '' or server == '':
         print('Invalid username and/or server in config file, aborting')
-        sys.exit(1)
-    result = os.system('scp %s %s:%s' % (write_file, account, config['Upload']['forecast_directory']))
-    if prob:
-        os.system('scp %s %s@%s:%s' % (prob_file, account, server, config['Upload']['plot_directory']))
-    print('  Upload finished with system exit status %s' % result)
-
-sys.exit(0)
+    else:
+        result = os.system('scp %s %s:%s' % (write_file, account, config['Upload']['forecast_directory']))
+        if prob:
+            os.system('scp %s %s@%s:%s' % (prob_file, account, server, config['Upload']['plot_directory']))
+        print('  Upload finished with system exit status %s' % result)
