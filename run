@@ -302,7 +302,7 @@ if upload and write_flag:
     if account == '' or server == '':
         print('Invalid username and/or server in config file, aborting')
     else:
-        result = os.system('scp %s %s:%s' % (write_file, account, config['Upload']['forecast_directory']))
+        result = os.system('scp %s %s@%s:%s' % (write_file, account, server, config['Upload']['forecast_directory']))
         if prob:
             os.system('scp %s %s@%s:%s' % (prob_file, account, server, config['Upload']['plot_directory']))
         print('  Upload finished with system exit status %s' % result)

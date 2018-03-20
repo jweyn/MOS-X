@@ -130,7 +130,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         units = 'temp|f,precip|in,speed|kts'
 
         # Retrieve data
-        obs_hourly_verify = get_obs_hourly(api_dates, vars_api, units)
+        obs_hourly_verify = get_obs_hourly(config, api_dates, vars_api, units)
 
     # Read new data for daily values
     m = Meso(token=config['meso_token'])
