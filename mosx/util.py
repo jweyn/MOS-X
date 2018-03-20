@@ -183,7 +183,7 @@ def generate_dates(config, api=False, start_date=None, end_date=None, api_end_ho
     end_dt = end_date
     if start_dt > end_dt:
         raise ValueError('Start date must be before end date; check MOSX_INFILE.')
-    if start_dt > datetime(start_dt.year, end_dt.month, end_dt.day):
+    if start_dt > datetime(start_dt.year, end_dt.month, end_dt.day) or not(config['is_season']):
         # Season crosses new year
         end_year = end_dt.year
     else:

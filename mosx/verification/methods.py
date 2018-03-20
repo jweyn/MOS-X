@@ -250,7 +250,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         print('Checking matching dates for daily obs and CF6...')
     if use_climo:
         try:
-            climo_values = climo_wind(dates)
+            climo_values = climo_wind(config, dates)
         except:
             if config['verbose']:
                 print('  Warning: problem reading climo data.')
@@ -261,7 +261,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         climo_values = {}
     if use_cf6:
         try:
-            cf6_values = cf6_parser()
+            cf6_values = cf6_parser(config)
         except:
             if config['verbose']:
                 print('  Warning: no CF6 files found.')
