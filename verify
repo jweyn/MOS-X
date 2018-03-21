@@ -235,8 +235,8 @@ for day in range(len(all_dates)):
     if sum(precip[day]) < 0.01:
         print('  Warning: overriding MOS-X prediction of %0.2f for rain with 0' % 
               predicted[day, 3])
-        predicted[day,3] = 0.
-    elif predicted[day,3] > max(precip[day]) or predicted[day,3] < min(precip[day]):
+        predicted[day, 3] = 0.
+    elif predicted[day, 3] > max(precip[day]) or predicted[day, 3] < min(precip[day]):
         print('Warning: MOS-X prediction for rainfall out of model range; ' + 
               'overriding MOS-X prediction of %0.2f with model mean' % predicted[day, 3])
         predicted[day, 3] = max(0., np.mean(precip[day] + [predicted[day, 3]]))
@@ -247,19 +247,18 @@ for day in range(len(all_dates)):
 if options.mos_flag:
     gfs = OrderedDict()
     nam = OrderedDict()
-    current_date = start_date
-    while current_date <= end_date:
+    for current_date in all_dates:
         init_date = current_date - timedelta(days=1)
         init_date = init_date.replace(hour=12)
 
         # GFS
-        print('Retrieving %s data initialized at %s' % ('GFS', init_date))
+        print('Retrieving %s data initialized at %s' % ('GFS MOS', init_date))
         daily = retrieve_mos('GFS', init_date, current_date)
         if daily is not None:
             gfs[current_date] = daily
 
         # NAM
-        print('Retrieving %s data initialized at %s' % ('NAM', init_date))
+        print('Retrieving %s data initialized at %s' % ('NAM MOS', init_date))
         daily = retrieve_mos('NAM', init_date, current_date)
         if daily is not None:
             nam[current_date] = daily
@@ -283,8 +282,14 @@ for day in range(len(all_dates)):
         verif_str = ''
     mosx_str = forecast_format % tuple(predicted[day, :4])
     if options.mos_flag:
-        gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
-        nam_str = forecast_format % tuple([nam[date][v] for v in variables])
+        try:
+            gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
+        except KeyError:
+            gfs_str = ''
+        try:
+            nam_str = forecast_format % tuple([nam[date][v] for v in variables])
+        except KeyError:
+            nam_str = ''
         print('%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mosx_str))
     else:
         print('%s,%s,%s' % (date, verif_str, mosx_str))
@@ -308,8 +313,14 @@ if options.write_flag:
                 verif_str = ''
             mosx_str = forecast_format % tuple(predicted[day, :4])
             if options.mos_flag:
-                gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
-                nam_str = forecast_format % tuple([nam[date][v] for v in variables])
+                try:
+                    gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
+                except KeyError:
+                    gfs_str = ''
+                try:
+                    nam_str = forecast_format % tuple([nam[date][v] for v in variables])
+                except KeyError:
+                    nam_str = ''
                 print >> f, '%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mosx_str)
             else:
                 print >>f, '%s,%s,%s' % (date, verif_str, mosx_str)
