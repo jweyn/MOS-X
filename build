@@ -73,14 +73,8 @@ if not use_existing:
 # Train the estimator and save it
 
 print('\n--- MOS-X build: generating and training estimator...\n')
-regressor = config['Model']['regressor']
-regressor_args = config['Model']['kwargs']
-train_individual = config['Model']['train_individual']
-ada_boost = config['Model'].get('ada_boost', None)
 
-p_test, t_test = mosx.train.train(config, predictor_file, config['Model']['estimator_file'], test_size=1,
-                                  regressor=regressor, sklearn_kwargs=regressor_args,
-                                  train_individual=train_individual, ada_boost=ada_boost)
+p_test, t_test = mosx.train.train(config, predictor_file, config['Model']['estimator_file'], test_size=1)
 
 
 # Test the predictor
