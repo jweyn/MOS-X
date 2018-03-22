@@ -53,7 +53,9 @@ def wxchallenge_error(y, y_pred, average=True, no_rain=False):
                 rain_error += 0.1
             rain_min += 1
 
-    result = high_error + low_error + wind_error + rain_error
+    result = high_error + low_error + wind_error
+    if not no_rain:
+        result += rain_error
     if average:
         result /= y.shape[0]
     return result

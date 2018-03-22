@@ -1,0 +1,57 @@
+#!/usr/bin/env python2
+#
+# Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
+#
+# See the file LICENSE for your rights.
+#
+
+"""
+Evaluate performance metrics for a MOS-X model. These functions should only be used after the data files in 'build' and
+'validate' have been created.
+"""
+
+import mosx
+import numpy as np
+import os
+import sys
+from optparse import OptionParser
+from datetime import datetime
+import matplotlib.pyplot as plt
+
+# Suppress warnings
+import warnings
+warnings.filterwarnings("ignore")
+
+
+def get_command_options():
+    parser = OptionParser()
+    parser.add_option('-l', '--learning-curve', dest='learning', action='store_true', default=False,
+                      help='Generate a learning curve for the model from the validation data')
+    (opts, args) = parser.parse_args()
+    return opts, args
+
+
+options, arguments = get_command_options()
+
+try:
+    config_file = arguments[0]
+except IndexError:
+    print('Required argument (config file) not provided.')
+    sys.exit(1)
+config = mosx.util.get_config(config_file)
+
+
+# Do some general regression characteristic scores from scikit-learn
+
+
+# Optional learning curve plot
+
+train_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+test_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], config['Validate']['end_date'])
+predictors, targets, n_samples_test = mosx.train.combine_train_test(config, train_file, test_file,
+                                                                    return_count_test=True)
+cv = mosx.train.SplitConsecutive(first=False, n_samples=n_samples_test)
+scorer = mosx.train.wxchallenge_scorer(no_rain=True)
+fig = mosx.train.model._plot_learning_curve(mosx.train.build_estimator(config), predictors, targets, cv=cv,
+                                            scoring=scorer)
+plt.savefig('learning_curve.pdf')

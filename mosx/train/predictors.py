@@ -8,6 +8,7 @@
 Methods for processing input predictor data.
 """
 
+import numpy as np
 import mosx.bufr
 import mosx.obs
 import mosx.verification

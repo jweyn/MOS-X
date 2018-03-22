@@ -157,6 +157,40 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
     return
 
 
+def _plot_learning_curve(estimator, X, y, ylim=None, cv=None, scoring=None, title=None, n_jobs=1,
+                         train_sizes=np.linspace(.1, 1.0, 5)):
+    import matplotlib.pyplot as plt
+    from sklearn.model_selection import learning_curve
+
+    fig = plt.figure()
+    if title is not None:
+        plt.title(title)
+    if ylim is not None:
+        plt.ylim(*ylim)
+    plt.xlabel("Training examples")
+    plt.ylabel("Score")
+    train_sizes, train_scores, test_scores = learning_curve(
+        estimator, X, y, cv=cv, scoring=scoring, n_jobs=n_jobs, train_sizes=train_sizes)
+    train_scores_mean = np.mean(train_scores, axis=1)
+    train_scores_std = np.std(train_scores, axis=1)
+    test_scores_mean = np.mean(test_scores, axis=1)
+    test_scores_std = np.std(test_scores, axis=1)
+    plt.grid()
+
+    plt.fill_between(train_sizes, train_scores_mean - train_scores_std,
+                     train_scores_mean + train_scores_std, alpha=0.1,
+                     color="r")
+    plt.fill_between(train_sizes, test_scores_mean - test_scores_std,
+                     test_scores_mean + test_scores_std, alpha=0.1, color="g")
+    plt.plot(train_sizes, train_scores_mean, 'o-', color="r",
+             label="Training score")
+    plt.plot(train_sizes, test_scores_mean, 'o-', color="g",
+             label="Cross-validation score")
+
+    plt.legend(loc="best")
+    return fig
+
+
 def plot_learning_curve(config, predictor_file, no_obs=False, no_models=False, ylim=None, cv=None, scoring=None,
                         title=None, n_jobs=1, train_sizes=np.linspace(.1, 1.0, 5)):
     """
@@ -195,7 +229,7 @@ def plot_learning_curve(config, predictor_file, no_obs=False, no_models=False, y
         cross-validators that can be used here.
 
     scoring :
-        Scoring function for the error calculation; should be a sciki-learn scorer object
+        Scoring function for the error calculation; should be a scikit-learn scorer object
 
     title : string
         Title for the chart.
@@ -206,36 +240,92 @@ def plot_learning_curve(config, predictor_file, no_obs=False, no_models=False, y
     train_sizes : iterable, optional
         Sequence of subsets of training data used in learning curve plot
     """
-    import matplotlib.pyplot as plt
-    from sklearn.model_selection import learning_curve
-
     estimator = build_estimator(config)
     X, y = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models)
-
-    fig = plt.figure()
-    if title is not None:
-        plt.title(title)
-    if ylim is not None:
-        plt.ylim(*ylim)
-    plt.xlabel("Training examples")
-    plt.ylabel("Score")
-    train_sizes, train_scores, test_scores = learning_curve(
-        estimator, X, y, cv=cv, scoring=scoring, n_jobs=n_jobs, train_sizes=train_sizes)
-    train_scores_mean = np.mean(train_scores, axis=1)
-    train_scores_std = np.std(train_scores, axis=1)
-    test_scores_mean = np.mean(test_scores, axis=1)
-    test_scores_std = np.std(test_scores, axis=1)
-    plt.grid()
-
-    plt.fill_between(train_sizes, train_scores_mean - train_scores_std,
-                     train_scores_mean + train_scores_std, alpha=0.1,
-                     color="r")
-    plt.fill_between(train_sizes, test_scores_mean - test_scores_std,
-                     test_scores_mean + test_scores_std, alpha=0.1, color="g")
-    plt.plot(train_sizes, train_scores_mean, 'o-', color="r",
-             label="Training score")
-    plt.plot(train_sizes, test_scores_mean, 'o-', color="g",
-             label="Cross-validation score")
-
-    plt.legend(loc="best")
+    fig = _plot_learning_curve(estimator, X, y, ylim=ylim, cv=cv, scoring=scoring, title=title, n_jobs=n_jobs,
+                               train_sizes=train_sizes)
     return fig
+
+
+def combine_train_test(config, train_file, test_file, no_obs=False, no_models=False, return_count_test=True):
+    """
+    Concatenates the arrays of predictors and verification values from the train file and the test file. Useful for
+    implementing cross-validation using scikit-learn's methods and the SplitConsecutive class.
+
+    :param config:
+    :param train_file: str: full path to predictor file for training
+    :param test_file: str: full path to predictor file for validation
+    :param no_obs: bool: if True, generates the model with no OBS data
+    :param no_models: bool: if True, generates the model with no BUFR data
+    :param return_count_test: bool: if True, also returns the number of samples in the test set (see SplitConsecutive)
+    :return: predictors, verifications: concatenated arrays of predictors and verification values; count: number of
+    samples in the test set
+    """
+    p_train, t_train = build_train_data(config, train_file, no_obs=no_obs, no_models=no_models)
+    p_test, t_test = build_train_data(config, test_file, no_obs=no_obs, no_models=no_models)
+    p_combined = np.concatenate((p_train, p_test), axis=0)
+    t_combined = np.concatenate((t_train, t_test), axis=0)
+    if return_count_test:
+        return p_combined, t_combined, t_test.shape[0]
+    else:
+        return p_combined, t_combined
+
+
+class SplitConsecutive(object):
+    """
+    Implements a split method to subset a training set into train and test sets, using the first or last n samples in
+    the set.
+    """
+
+    def __init__(self, first=False, n_samples=0.2):
+        """
+        Create an instance of SplitConsecutive.
+
+        :param first: bool: if True, gets test data from the beginning of the data set; otherwise from the end
+        :param n_samples: float or int: if float, subsets a fraction (0 to 1) of the data into the test set; if int,
+        subsets a specific number of samples.
+        """
+        if type(first) is not bool:
+            raise TypeError("'first' must be a boolean type.")
+        try:
+            n_samples = int(n_samples)
+        except:
+            pass
+        if type(n_samples) is float and (n_samples <= 0. or n_samples >= 1.):
+            raise ValueError("if float, 'n_samples' must be between 0 and 1.")
+        if type(n_samples) is not float and type(n_samples) is not int:
+            raise TypeError("'n_samples' must be float or int type.")
+        self.first = first
+        self.n_samples = n_samples
+        self.n_splits = 1
+
+    def split(self, X, y=None, groups=None):
+        """
+        Produces arrays of indices to use for train and test splits.
+
+        :param X: array-like, shape (samples, features): predictor data
+        :param y: array-like, shape (samples, outputs) or None: verification data; ignored
+        :param groups: ignored
+        :return: train, test: 1-D arrays of sample indices in the train and test sets
+        """
+        num_samples = X.shape[0]
+        indices = np.arange(0, num_samples, 1, dtype=np.int32)
+        if type(self.n_samples) is float:
+            self.n_samples = int(np.round(num_samples * self.n_samples))
+        if self.first:
+            test = indices[:self.n_samples]
+            train = indices[self.n_samples:]
+        else:
+            test = indices[-self.n_samples:]
+            train = indices[:num_samples - self.n_samples]
+        yield train, test
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        """
+        Return the number of splits.
+        :param X: ignored
+        :param y: ignored
+        :param groups: ignored
+        :return:
+        """
+        return self.n_splits

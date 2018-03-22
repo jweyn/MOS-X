@@ -8,6 +8,7 @@
 Methods for formatting predictor data and training scikit-learn models.
 """
 
-from train import *
-from predictors import format_predictors
+import model
+from model import *
+from predictors import *
 from scorers import wxchallenge_scorer

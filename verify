@@ -26,7 +26,6 @@ warnings.filterwarnings("ignore")
 
 
 def get_command_options():
-    # Get the forecast date
     parser = OptionParser()
     parser.add_option('-s', '--start-date', dest='startstr', action='store', type='string', default='weekago',
                       help='Starting verification date, YYYYMMDD (default=today)')
