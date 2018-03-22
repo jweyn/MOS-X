@@ -40,6 +40,10 @@ except IndexError:
     sys.exit(1)
 config = mosx.util.get_config(config_file)
 
+predict_timeseries = config['Model']['predict_timeseries']
+if predict_timeseries:
+    config['Model']['predict_timeseries'] = False
+
 
 # Do some general regression characteristic scores from scikit-learn
 

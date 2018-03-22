@@ -58,6 +58,9 @@ Version history
 2018-03-20: Version 0.7.1
     -- fixed a bug that would result in an extra set of API dates when is_season is False
     -- fixed some issues related to the use of the config file
+2018-03-21: Version 0.8.0
+    -- added scorers
+    -- added learning curves in performance metrics; more to come
 
 """
 
@@ -67,4 +70,4 @@ import verification
 import train
 import util
 
-__version__ = '0.7.1'
+__version__ = '0.8.0'
