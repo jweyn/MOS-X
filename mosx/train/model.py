@@ -8,7 +8,7 @@
 Methods for training scikit-learn models.
 """
 
-from mosx.util import get_object, TimeSeriesEstimator
+from mosx.util import get_object, TimeSeriesEstimator, RainTuningEstimator
 import pickle
 import numpy as np
 
@@ -76,6 +76,9 @@ def build_estimator(config):
         estimator = TimeSeriesEstimator(Pipeline(pipeline), Pipeline(pipeline_timeseries))
     else:
         estimator = Pipeline(pipeline)
+
+    if config['Model']['tune_rain']:
+        estimator = RainTuningEstimator(estimator)
 
     return estimator
 

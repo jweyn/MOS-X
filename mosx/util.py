@@ -13,6 +13,9 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import pickle
+from sklearn.multioutput import MultiOutputRegressor
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestRegressor
 
 
 # ==================================================================================================================== #
@@ -54,6 +57,116 @@ class TimeSeriesEstimator(object):
         timeseries = self.timeseries_estimator.predict(predictor_array, **kwargs)
         if self.array_form:
             return np.concatenate((daily, timeseries), axis=1)
+
+
+class RainTuningEstimator(object):
+    """
+    This class extends an estimator to include a separately-trained post-processing random forest for the daily rainfall
+    prediction. Standard algorithms generally do a poor job of predicting a variable that has such a non-normal
+    probability distribution as daily rainfall (which is dominated by 0s).
+    """
+    def __init__(self, estimator):
+        """
+        Initialize an instance of an estimator with a rainfall post-processor.
+
+        :param estimator: sklearn estimator or TimeSeriesEstimator with an _estimators attribute
+        """
+        self.base_estimator = estimator
+        self.named_steps = self.base_estimator.named_steps
+        self.rain_processor = RandomForestRegressor(n_estimators=100, )
+        if isinstance(self.base_estimator, Pipeline):
+            self.forest = self.named_steps['regressor']
+            self.imputer = self.named_steps['imputer']
+        else:
+            self.imputer = None
+            self.forest = self.base_estimator
+
+    def _get_tree_rain_prediction(self, X):
+        # Get predictions from individual trees.
+        num_samples = X.shape[0]
+        if self.imputer is not None:
+            X = self.imputer.transform(X)
+        if isinstance(self.forest, MultiOutputRegressor):
+            num_trees = len(self.forest.estimators_[0].estimators_)
+            predicted_rain = np.zeros((num_samples, num_trees))
+            for s in range(num_samples):
+                Xs = X[s].reshape(1, -1)
+                for t in range(num_trees):
+                    try:
+                        predicted_rain[s, t] = self.forest.estimators_[3].estimators_[t].predict(Xs)
+                    except AttributeError:
+                        # Work around an error in sklearn where GBTrees have length-1 ndarrays...
+                        predicted_rain[s, t] = self.forest.estimators_[3].estimators_[t][0].predict(Xs)
+        else:
+            num_trees = len(self.forest.estimators_)
+            predicted_rain = np.zeros((num_samples, num_trees))
+            for s in range(num_samples):
+                Xs = X[s].reshape(1, -1)
+                for t in range(num_trees):
+                    try:
+                        predicted_rain[s, t] = self.forest.estimators_[t].predict(Xs)
+                    except AttributeError:
+                        # Work around an error in sklearn where GBTrees have length-1 ndarrays...
+                        predicted_rain[s, t] = self.forest.estimators_[t][0].predict(Xs)
+        return predicted_rain
+
+    def _get_distribution(self, p_rain):
+        # Get the mean, std, mode, amp of mode of a forest prediction.
+        mean = np.mean(p_rain, axis=1)
+        std = np.std(p_rain, axis=1)
+        mode = np.zeros_like(mean)
+        mode_frac = np.zeros_like(mean)
+        for s in range(p_rain.shape[0]):
+            forest_int = np.array(np.round(100. * p_rain[s]), dtype=np.int32)
+            rain_count = np.bincount(forest_int)
+            rev_count = rain_count[::-1]
+            mode_int = rain_count.size - rev_count.argmax() - 1
+            mode[s] = 0.01 * mode_int
+            mode_frac[s] = 1. * np.sum(forest_int == mode_int) / p_rain.shape[1]
+        return np.stack((mean, std, mode, mode_frac), axis=1)
+
+    def fit(self, predictor_array, verification_array, **kwargs):
+        """
+        Fit the estimator and the post-processor.
+
+        :param predictor_array: ndarray-like: predictor features
+        :param verification_array: ndarray-like: truth values
+        :param kwargs: passed to the estimator's 'fit' method
+        :return:
+        """
+        # First, fit the estimator as usual
+        self.base_estimator.fit(predictor_array, verification_array, **kwargs)
+
+        # Now generate the distribution information from the individual trees in the forest
+        print('Fitting RainTuningEstimator post-processor...')
+        predicted_rain = self._get_tree_rain_prediction(predictor_array)
+        rain_distribution = self._get_distribution(predicted_rain)
+
+        # Fit a random forest post-processor
+        self.rain_processor.fit(rain_distribution, verification_array[:, 3])
+
+    def predict(self, predictor_array, **kwargs):
+        """
+        Return a prediction from the estimator with post-processed rain.
+        :param predictor_array: ndarray-like: predictor features
+        :param kwargs: passed to estimator's 'predict' method
+        :return: array of predictions
+        """
+        # Predict with the estimator as usual
+        predicted = self.base_estimator.predict(predictor_array, **kwargs)
+
+        # Get the distribution from individual trees
+        predicted_rain = self._get_tree_rain_prediction(predictor_array)
+        rain_distribution = self._get_distribution(predicted_rain)
+        print(rain_distribution)
+
+        # Now get the tuned rain
+        print('Tuning rain prediction...')
+        tuned_rain = self.rain_processor.predict(rain_distribution)
+        predicted[:, 3] = tuned_rain
+
+        return predicted
+
 
 
 # ==================================================================================================================== #
