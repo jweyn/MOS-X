@@ -65,15 +65,16 @@ class RainTuningEstimator(object):
     prediction. Standard algorithms generally do a poor job of predicting a variable that has such a non-normal
     probability distribution as daily rainfall (which is dominated by 0s).
     """
-    def __init__(self, estimator):
+    def __init__(self, estimator, **kwargs):
         """
         Initialize an instance of an estimator with a rainfall post-processor.
 
         :param estimator: sklearn estimator or TimeSeriesEstimator with an _estimators attribute
+        :param kwargs: passed to scikit-learn random forest rain processing algorithm
         """
         self.base_estimator = estimator
         self.named_steps = self.base_estimator.named_steps
-        self.rain_processor = RandomForestRegressor(n_estimators=100, )
+        self.rain_processor = RandomForestRegressor(**kwargs)
         if isinstance(self.base_estimator, Pipeline):
             self.forest = self.named_steps['regressor']
             self.imputer = self.named_steps['imputer']
@@ -111,19 +112,11 @@ class RainTuningEstimator(object):
         return predicted_rain
 
     def _get_distribution(self, p_rain):
-        # Get the mean, std, mode, amp of mode of a forest prediction.
+        # Get the mean, std, and number of 0 forecasts from the estimator.
         mean = np.mean(p_rain, axis=1)
         std = np.std(p_rain, axis=1)
-        mode = np.zeros_like(mean)
-        mode_frac = np.zeros_like(mean)
-        for s in range(p_rain.shape[0]):
-            forest_int = np.array(np.round(100. * p_rain[s]), dtype=np.int32)
-            rain_count = np.bincount(forest_int)
-            rev_count = rain_count[::-1]
-            mode_int = rain_count.size - rev_count.argmax() - 1
-            mode[s] = 0.01 * mode_int
-            mode_frac[s] = 1. * np.sum(forest_int == mode_int) / p_rain.shape[1]
-        return np.stack((mean, std, mode, mode_frac), axis=1)
+        zero_frac = 1. * np.sum(p_rain < 0.005, axis=1) / p_rain.shape[1]
+        return np.stack((mean, std, zero_frac), axis=1)
 
     def fit(self, predictor_array, verification_array, **kwargs):
         """
@@ -166,7 +159,6 @@ class RainTuningEstimator(object):
         predicted[:, 3] = tuned_rain
 
         return predicted
-
 
 
 # ==================================================================================================================== #
@@ -236,10 +228,14 @@ def get_config(config_path):
         else:
             config['BUFR']['bufr_models'].append(model.lower())
 
-    # Convert kwargs and ada_boost (kwargs), if available, to int or float types
-    config['Model']['kwargs'].walk(walk_kwargs)
+    # Convert kwargs, Rain tuning, and Ada boosting, if available, to int or float types
+    config['Model']['Parameters'].walk(walk_kwargs)
     try:
-        config['Model']['ada_boost'].walk(walk_kwargs)
+        config['Model']['Ada boosting'].walk(walk_kwargs)
+    except KeyError:
+        pass
+    try:
+        config['Model']['Rain tuning'].walk(walk_kwargs)
     except KeyError:
         pass
 

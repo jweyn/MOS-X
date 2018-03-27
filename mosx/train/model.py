@@ -21,9 +21,10 @@ def build_estimator(config):
     :return:
     """
     regressor = config['Model']['regressor']
-    sklearn_kwargs = config['Model']['kwargs']
+    sklearn_kwargs = config['Model']['Parameters']
     train_individual = config['Model']['train_individual']
-    ada_boost = config['Model'].get('ada_boost', None)
+    ada_boost = config['Model'].get('Ada boosting', None)
+    rain_tuning = config['Model'].get('Rain tuning', None)
     Regressor = get_object('sklearn.%s' % regressor)
     if config['verbose']:
         print('Using sklearn.%s as estimator...' % regressor)
@@ -33,14 +34,6 @@ def build_estimator(config):
     from sklearn.pipeline import Pipeline
 
     # Create and train the learning algorithm
-    # Set default kwargs for neural net, random forest
-    if regressor.startswith('neural_net'):
-        if 'activation' not in sklearn_kwargs:
-            sklearn_kwargs['activation'] = 'logistic'
-    elif regressor.startswith('ensemble'):
-        if 'n_estimators' not in sklearn_kwargs:
-            sklearn_kwargs['n_estimators'] = 250
-
     print('Here are the parameters passed to the learning algorithm...')
     print(sklearn_kwargs)
 
@@ -77,8 +70,9 @@ def build_estimator(config):
     else:
         estimator = Pipeline(pipeline)
 
-    if config['Model']['tune_rain']:
-        estimator = RainTuningEstimator(estimator)
+    if rain_tuning is not None and regressor.startswith('ensemble'):
+        print('Using rain tuning...')
+        estimator = RainTuningEstimator(estimator, **rain_tuning)
 
     return estimator
 
