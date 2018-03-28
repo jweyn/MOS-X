@@ -61,6 +61,8 @@ Version history
 2018-03-21: Version 0.8.0
     -- added scorers
     -- added learning curves in performance metrics; more to come
+2018-03-27: Version 0.8.1
+    -- fixed an error in util.generate_dates that failed to produce all the dates when is_season is False
 
 """
 
@@ -70,4 +72,4 @@ import verification
 import train
 import util
 
-__version__ = '0.8.0'
+__version__ = '0.8.1'
