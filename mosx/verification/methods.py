@@ -110,9 +110,8 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
     if output_file is None:
         output_file = '%s/%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'])
 
-    end_date = datetime.strptime(config['data_end_date'], '%Y%m%d') + timedelta(days=1)
     dates = generate_dates(config)
-    api_dates = generate_dates(config, api=True, end_date=end_date, api_end_hour=6)
+    api_dates = generate_dates(config, api=True, api_add_hour=30)
 
     # If a time series is desired, then get hourly data
     if config['Model']['predict_timeseries']:
@@ -180,6 +179,11 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
             if col == list(obs_var_names[key].keys())[0]:
                 col_names[c] = key
     obspd.columns = col_names
+
+    # Make sure we have columns for all requested variables
+    for var in vars_request:
+        if var not in col_names:
+            obspd = obspd.assign(**{var: np.nan})
 
     # Change datetime column to datetime object, subtract 6 hours to use 6Z days
     if config['verbose']:

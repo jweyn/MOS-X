@@ -11,7 +11,7 @@ Utilities for the MOS-X model.
 import os
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import pickle
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.pipeline import Pipeline
@@ -270,7 +270,7 @@ def get_object(module_class):
     return mod
 
 
-def generate_dates(config, api=False, start_date=None, end_date=None, api_end_hour=0):
+def generate_dates(config, api=False, start_date=None, end_date=None, api_add_hour=0):
     """
     Returns all of the dates requested from the config. If api is True, then returns a list of (start_date, end_date)
     tuples split by year in strings formatted for the MesoWest API call. If api is False, then returns a list of all
@@ -281,7 +281,7 @@ def generate_dates(config, api=False, start_date=None, end_date=None, api_end_ho
     :param api: bool: if True, returns dates formatted for MesoWest API call
     :param start_date: str: starting date in config file format (YYYYMMDD)
     :param end_date: str: ending date in config file format (YYYYMMDD)
-    :param api_end_hour: int: last hour of last day in an API call, useful for getting up to 6Z data
+    :param api_add_hour: int: add this number of hours to the end of the call, useful for getting up to 6Z on last day
     :return:
     """
     if start_date is None:
@@ -292,13 +292,13 @@ def generate_dates(config, api=False, start_date=None, end_date=None, api_end_ho
     end_dt = end_date
     if start_dt > end_dt:
         raise ValueError('Start date must be before end date; check MOSX_INFILE.')
-    if start_dt > datetime(start_dt.year, end_dt.month, end_dt.day) or not(config['is_season']):
-        # Season crosses new year
-        end_year = end_dt.year
-    else:
-        end_year = end_dt.year + 1
+    end_year = end_dt.year + 1
+    time_added = timedelta(hours=api_add_hour)
     all_dates = []
     if config['is_season']:
+        if start_dt > datetime(start_dt.year, end_dt.month, end_dt.day):
+            # Season crosses new year
+            end_year -= 1
         for year in range(start_dt.year, end_year):
             if start_dt > datetime(start_dt.year, end_dt.month, end_dt.day):
                 # Season crosses new year
@@ -307,7 +307,7 @@ def generate_dates(config, api=False, start_date=None, end_date=None, api_end_ho
                 year2 = year
             if api:
                 year_start = datetime.strftime(datetime(year, start_dt.month, start_dt.day), '%Y%m%d0000')
-                year_end = datetime.strftime(datetime(year2, end_dt.month, end_dt.day, api_end_hour), '%Y%m%d%H00')
+                year_end = datetime.strftime(datetime(year2, end_dt.month, end_dt.day) + time_added, '%Y%m%d%H00')
                 all_dates.append((year_start, year_end))
             else:
                 year_dates = pd.date_range(datetime(year, start_dt.month, start_dt.day),
@@ -323,9 +323,9 @@ def generate_dates(config, api=False, start_date=None, end_date=None, api_end_ho
                 else:
                     year_start = datetime.strftime(datetime(year, 1, 1), '%Y%m%d0000')
                 if year == end_dt.year:
-                    year_end = datetime.strftime(datetime(year, end_dt.month, end_dt.day, api_end_hour), '%Y%m%d%H00')
+                    year_end = datetime.strftime(datetime(year, end_dt.month, end_dt.day) + time_added, '%Y%m%d%H00')
                 else:
-                    year_end = datetime.strftime(datetime(year+1, 1, 1, api_end_hour), '%Y%m%d%H00')
+                    year_end = datetime.strftime(datetime(year+1, 1, 1) + time_added, '%Y%m%d%H00')
                 all_dates.append((year_start, year_end))
         else:
             pd_dates = pd.date_range(start_dt, end_dt, freq='D')
