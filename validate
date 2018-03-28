@@ -122,6 +122,13 @@ if options.tune_rain:
             print('Warning: MOS-X prediction for rainfall out of model range; ' +
                   'overriding MOS-X prediction of %0.2f with model mean' % predicted[day, 3])
             predicted[day, 3] = max(0., np.mean(precip[day] + [predicted[day, 3]]))
+else:
+    # At least make sure we aren't predicting negative values...
+    predicted[:, 3][predicted[:, 3] < 0] = 0.0
+
+# Round off daily values
+predicted[:, :3] = np.round(predicted[:, :3])
+predicted[:, 3] = np.round(predicted[:, 3], 2)
 
 
 # Print forecasts!

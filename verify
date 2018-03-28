@@ -79,10 +79,7 @@ def retrieve_mos(model, init_date, forecast_date):
     """
 
     # Create daily return dict
-    daily = {'Tmax' : None,
-             'Tmin' : None,
-             'Wind' : None,
-             'Rain' : None}
+    daily = OrderedDict()
 
     base_url = 'http://mesonet.agron.iastate.edu/mos/csv.php?station=%s&runtime=%s&model=%s'
     formatted_date = init_date.strftime('%Y-%m-%d%%20%H:00')
@@ -240,27 +237,44 @@ for day in range(len(all_dates)):
               'overriding MOS-X prediction of %0.2f with model mean' % predicted[day, 3])
         predicted[day, 3] = max(0., np.mean(precip[day] + [predicted[day, 3]]))
 
+# Round off daily values
+predicted[:, :3] = np.round(predicted[:, :3])
+predicted[:, 3] = np.round(predicted[:, 3], 2)
+
 
 # Get GFS and NAM MOS forecasts, if desired
 
 if options.mos_flag:
     gfs = OrderedDict()
     nam = OrderedDict()
+    mos_mean = OrderedDict()
     for current_date in all_dates:
         init_date = current_date - timedelta(days=1)
         init_date = init_date.replace(hour=12)
+        mos_array = np.full((2, 4), np.nan)
 
         # GFS
         print('Retrieving %s data initialized at %s' % ('GFS MOS', init_date))
         daily = retrieve_mos('GFS', init_date, current_date)
         if daily is not None:
             gfs[current_date] = daily
+            mos_array[0, :] = daily.values()
 
         # NAM
         print('Retrieving %s data initialized at %s' % ('NAM MOS', init_date))
         daily = retrieve_mos('NAM', init_date, current_date)
         if daily is not None:
             nam[current_date] = daily
+            mos_array[1, :] = daily.values()
+
+        # Ensemble mean
+        mos_array = np.nanmean(mos_array, axis=0)
+        mos_mean[current_date] = {
+            'Tmax': mos_array[0],
+            'Tmin': mos_array[1],
+            'Wind': mos_array[2],
+            'Rain': mos_array[3]
+        }
 
         current_date += timedelta(days=1)
 
@@ -270,7 +284,7 @@ if options.mos_flag:
 forecast_format = '%0.0f/%0.0f/%0.0f/%0.2f'
 variables = ['Tmax', 'Tmin', 'Wind', 'Rain']
 if options.mos_flag:
-    print('\nDay, verification, GFS MOS, NAM MOS, MOS-X')
+    print('\nDay, verification, GFS MOS, NAM MOS, MOS MEAN, MOS-X')
 else:
     print('\nDay, verification, MOS-X')
 for day in range(len(all_dates)):
@@ -289,7 +303,11 @@ for day in range(len(all_dates)):
             nam_str = forecast_format % tuple([nam[date][v] for v in variables])
         except KeyError:
             nam_str = ''
-        print('%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mosx_str))
+        try:
+            mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
+        except KeyError:
+            mos_mean_str = ''
+        print('%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str))
     else:
         print('%s,%s,%s' % (date, verif_str, mosx_str))
 
@@ -301,7 +319,7 @@ if options.write_flag:
     
     with open(options.write_file, 'w') as f:
         if options.mos_flag:
-            print >> f, 'date,verification,GFS MOS,NAM MOS,MOS-X'
+            print >> f, 'date,verification,GFS MOS,NAM MOS,MOS MEAN,MOS-X'
         else:
             print >> f, 'date,verification,MOS-X'
         for day in range(len(all_dates)):
@@ -320,6 +338,10 @@ if options.write_flag:
                     nam_str = forecast_format % tuple([nam[date][v] for v in variables])
                 except KeyError:
                     nam_str = ''
-                print >> f, '%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mosx_str)
+                try:
+                    mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
+                except KeyError:
+                    mos_mean_str = ''
+                print >> f, '%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str)
             else:
                 print >>f, '%s,%s,%s' % (date, verif_str, mosx_str)

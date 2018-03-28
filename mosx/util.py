@@ -138,10 +138,11 @@ class RainTuningEstimator(object):
         # Fit a random forest post-processor
         self.rain_processor.fit(rain_distribution, verification_array[:, 3])
 
-    def predict(self, predictor_array, **kwargs):
+    def predict(self, predictor_array, rain_tuning=True, **kwargs):
         """
         Return a prediction from the estimator with post-processed rain.
         :param predictor_array: ndarray-like: predictor features
+        :param rain_tuning: bool: toggle option to disable rain tuning in prediction
         :param kwargs: passed to estimator's 'predict' method
         :return: array of predictions
         """
@@ -151,12 +152,12 @@ class RainTuningEstimator(object):
         # Get the distribution from individual trees
         predicted_rain = self._get_tree_rain_prediction(predictor_array)
         rain_distribution = self._get_distribution(predicted_rain)
-        print(rain_distribution)
 
         # Now get the tuned rain
-        print('Tuning rain prediction...')
-        tuned_rain = self.rain_processor.predict(rain_distribution)
-        predicted[:, 3] = tuned_rain
+        if rain_tuning:
+            print('Tuning rain prediction...')
+            tuned_rain = self.rain_processor.predict(rain_distribution)
+            predicted[:, 3] = tuned_rain
 
         return predicted
 
