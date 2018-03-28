@@ -138,8 +138,8 @@ elif predicted[3] > max(precip) or predicted[3] < min(precip):
     predicted[3] = np.mean(precip + [predicted[3]])
 
 # Round off daily values
-predicted[:, :3] = np.round(predicted[:, :3])
-predicted[:, 3] = np.round(predicted[:, 3], 2)
+predicted[:3] = np.round(predicted[:3])
+predicted[3] = np.round(predicted[3], 2)
 
 # If probabilities are requested and available, get the results from each tree
 if not(config['Model']['regressor'].startswith('ensemble')):

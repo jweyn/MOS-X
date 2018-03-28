@@ -50,12 +50,13 @@ if predict_timeseries:
 
 # Optional learning curve plot
 
-train_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
-test_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], config['Validate']['end_date'])
-predictors, targets, n_samples_test = mosx.train.combine_train_test(config, train_file, test_file,
-                                                                    return_count_test=True)
-cv = mosx.train.SplitConsecutive(first=False, n_samples=n_samples_test)
-scorer = mosx.train.wxchallenge_scorer(no_rain=True)
-fig = mosx.train.model._plot_learning_curve(mosx.train.build_estimator(config), predictors, targets, cv=cv,
-                                            scoring=scorer)
-plt.savefig('learning_curve.pdf')
+if options.learning:
+    train_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+    test_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], config['Validate']['end_date'])
+    predictors, targets, n_samples_test = mosx.train.combine_train_test(config, train_file, test_file,
+                                                                        return_count_test=True)
+    cv = mosx.train.SplitConsecutive(first=False, n_samples=n_samples_test)
+    scorer = mosx.train.wxchallenge_scorer(no_rain=True)
+    fig = mosx.train.model._plot_learning_curve(mosx.train.build_estimator(config), predictors, targets, cv=cv,
+                                                scoring=scorer)
+    plt.savefig('learning_curve.pdf')
