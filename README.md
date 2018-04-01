@@ -30,7 +30,7 @@ Nothing to do really. Just make sure the scripts in the main directory (`build`,
 ## Building a model
 
 1. The first thing to do is to set up the config file for the particular site to forecast for. The `default.config` file has a good number of comments to describe how to do that. Parameters that are not marked 'optional' or with a default value must be specified.
-  - One optional parameter that may cause some trouble is `climo_station_id`. This is a long station ID that is used in the NCDC climate databases. To find the station ID for a particular site, see the file at ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-history.txt (yes I know this is complicated, and an automated procedure is on the TODO list)
+  - One "optional" parameter that may cause some trouble is `climo_station_id`. This is a long station ID that is used in the NCDC climate databases. To find the station ID for a particular site, see the file at ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-history.txt (yes I know this is complicated, and an automated procedure is on the TODO list)
   - It is also not recommended to use the upper-air sounding data option. In my testing adding sounding data actually made no difference to the skill of the models, but YMMV. Use with caution. I don't test it.
 2. Once the config is set up, build the model using `build <config>`. The config reader will automatically look for `<config>.config` too, so if you're like me and like to call your config files `KSEA.config`, it's handy to just pass `KSEA`.
   - Depending on how much training data is requested, it may take several hours for BUFRgruven to download everything.
