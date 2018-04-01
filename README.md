@@ -8,8 +8,8 @@ These data, along with surface observations from MesoWest, are used to train any
 
 ### Requirements
 
-- A workstation with a recent Linux installation... sorry, that's all that will work with the next item...
 - Python 2.7 (no Python 3 yet, and probably ever, because this is a toy project)
+- A workstation with a recent Linux installation... sorry, that's all that will work with the next item...
 - [BUFRgruven](http://strc.comet.ucar.edu/software/bgruven/) - for model data
 - An API key for [MesoWest](https://synopticlabs.org/api/mesonet/) - free and unlimited use
 - A decent amount of free disk space - some of the models are > 1 GB pickle files... not to mention all the BUFKIT files...
