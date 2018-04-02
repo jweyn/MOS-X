@@ -14,9 +14,11 @@ import mosx
 import numpy as np
 import os
 import sys
+import pickle
 from optparse import OptionParser
 from datetime import datetime
 import matplotlib.pyplot as plt
+from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score
 
 # Suppress warnings
 import warnings
@@ -44,15 +46,44 @@ predict_timeseries = config['Model']['predict_timeseries']
 if predict_timeseries:
     config['Model']['predict_timeseries'] = False
 
+test_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], config['Validate']['end_date'])
+if not(os.path.isfile(test_file)):
+    print("Cannot find validation predictors file '%s'. Please run 'validate' first." % test_file)
+    sys.exit(1)
+
 
 # Do some general regression characteristic scores from scikit-learn
+
+with open(test_file, 'rb') as handle:
+    predictors = pickle.load(handle)
+predictor_array = np.concatenate((predictors['BUFKIT'], predictors['OBS']), axis=1)
+true_array = predictors['VERIF']
+
+# Make the prediction
+print('Loading estimator %s...' % config['Model']['estimator_file'])
+with open(config['Model']['estimator_file'], 'rb') as handle:
+    estimator = pickle.load(handle)
+predicted = estimator.predict(predictor_array)
+
+# Scores
+multi = 'raw_values'
+evar = explained_variance_score(true_array[:, :4], predicted[:, :4], multioutput=multi)
+mae = mean_absolute_error(true_array[:, :4], predicted[:, :4], multioutput=multi)
+mse = mean_squared_error(true_array[:, :4], predicted[:, :4], multioutput=multi)
+r2 = r2_score(true_array[:, :4], predicted[:, :4], multioutput=multi)
+
+print('Explained variance score: %s' % evar)
+print('Mean absolute error: %s' % mae)
+print('Mean squared error: %s' % mse)
+print('R^2 coefficient of determination: %s' % r2)
 
 
 # Optional learning curve plot
 
 if options.learning:
     train_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
-    test_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], config['Validate']['end_date'])
+    test_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'],
+                                                config['Validate']['end_date'])
     predictors, targets, n_samples_test = mosx.train.combine_train_test(config, train_file, test_file,
                                                                         return_count_test=True)
     cv = mosx.train.SplitConsecutive(first=False, n_samples=n_samples_test)
