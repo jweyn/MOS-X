@@ -129,7 +129,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         units = 'temp|f,precip|in,speed|kts'
 
         # Retrieve data
-        obs_hourly_verify = get_obs_hourly(config, api_dates, vars_api, units)
+        obs_hourly_verify, minute_mode = get_obs_hourly(config, api_dates, vars_api, units, return_minute=True)
 
     # Read new data for daily values
     m = Meso(token=config['meso_token'])
@@ -348,12 +348,23 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         except KeyError:
             continue
         if np.any(np.isnan(day_dict.values())):
+            if config['verbose']:
+                print('Omitting day %s; missing data' % date)
             continue  # No verification can have missing values
         if config['Model']['predict_timeseries']:
-            start = pd.Timestamp((date + timedelta(hours=5)))  # ensures we have obs a few minutes before 6Z
-            end = pd.Timestamp((date + timedelta(hours=30)))
-            series = obs_hourly_verify.loc[start:end]
+            # TODO: SHOULD NOT HAVE TO USE MINUTE_MODE!!!! PANDAS BUG!!!!
+            start = pd.Timestamp((date + timedelta(hours=5, minutes=minute_mode)))
+            end = pd.Timestamp((date + timedelta(hours=29, minutes=minute_mode)))
+            try:
+                series = obs_hourly_verify.loc[start:end]
+            except KeyError:
+                # No values for the day
+                if config['verbose']:
+                    print('Omitting day %s; missing data' % date)
+                continue
             if series.isnull().values.any():
+                if config['verbose']:
+                    print('Omitting day %s; missing data' % date)
                 continue
             series_dict = OrderedDict(series.to_dict(into=OrderedDict))
             day_dict.update(series_dict)

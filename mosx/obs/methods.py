@@ -96,7 +96,7 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
     return data
 
 
-def get_obs_hourly(config, api_dates, vars_api, units):
+def get_obs_hourly(config, api_dates, vars_api, units, return_minute=False):
     """
     Retrieve hourly obs data in a pd dataframe. In order to ensure that there is no missing hourly indices, use
     dataframe.reindex on each retrieved dataframe.
@@ -104,6 +104,7 @@ def get_obs_hourly(config, api_dates, vars_api, units):
     :param api_dates: dates from generate_dates
     :param vars_api: str: string formatted for api call var parameter
     :param units: str: string formatted for api call units parameter
+    :param return_minute: bool: if True, return the minute of hourly obs
     :return: pd.DataFrame: formatted hourly obs DataFrame
     """
     # Initialize Meso
@@ -173,7 +174,10 @@ def get_obs_hourly(config, api_dates, vars_api, units):
 
         obs_final = pd.concat((obs_final, obs_hourly))
 
-    return obs_final
+    if return_minute:
+        return obs_final, minute_mode
+    else:
+        return obs_final
 
 
 def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=False, use_existing_sounding=True):

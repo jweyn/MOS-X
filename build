@@ -66,8 +66,9 @@ if not use_existing:
     print('\n--- MOS-X build: retrieving VERIF data...\n')
     mosx.verification.verification(config, verif_file)
 
-    print('\n--- MOS-X build: formatting predictor and target data...\n')
-    mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file)
+# Re-format predictors even if using existing raw data
+print('\n--- MOS-X build: formatting predictor and target data...\n')
+mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file)
 
 
 # Train the estimator and save it
