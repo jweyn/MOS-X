@@ -129,7 +129,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         units = 'temp|f,precip|in,speed|kts'
 
         # Retrieve data
-        obs_hourly_verify, minute_mode = get_obs_hourly(config, api_dates, vars_api, units, return_minute=True)
+        obs_hourly_verify = get_obs_hourly(config, api_dates, vars_api, units)
 
     # Read new data for daily values
     m = Meso(token=config['meso_token'])
@@ -352,9 +352,8 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
                 print('Omitting day %s; missing data' % date)
             continue  # No verification can have missing values
         if config['Model']['predict_timeseries']:
-            # TODO: SHOULD NOT HAVE TO USE MINUTE_MODE!!!! PANDAS BUG!!!!
-            start = pd.Timestamp((date + timedelta(hours=5, minutes=minute_mode)))
-            end = pd.Timestamp((date + timedelta(hours=29, minutes=minute_mode)))
+            start = pd.Timestamp((date + timedelta(hours=5)))
+            end = pd.Timestamp((date + timedelta(hours=29)))
             try:
                 series = obs_hourly_verify.loc[start:end]
             except KeyError:

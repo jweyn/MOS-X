@@ -28,6 +28,8 @@ def get_command_options():
     parser = OptionParser()
     parser.add_option('-d', '--date', dest='datestr', action='store', type='string', default='tomorrow',
                       help='Date to run model for, YYYYMMDD (default=tomorrow)')
+    parser.add_option('-t', '--tune-rain', dest='tune_rain', action='store_true', default=False,
+                      help='Apply manual rainfall tuning')
     parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False,
                       help='Write to a pickle file')
     parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default='default',
@@ -128,14 +130,19 @@ predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)
 predicted = np.squeeze(estimator.predict(predictors))
 
 # Check for precipitation override
-if sum(precip) < 0.01:
-    print('Warning: overriding MOS-X prediction of %0.2f for rain with 0' % 
-          predicted[3])
-    predicted[3] = 0.
-elif predicted[3] > max(precip) or predicted[3] < min(precip):
-    print('Warning: MOS-X prediction for rainfall out of model range; ' + 
-          'overriding MOS-X prediction of %0.2f with model mean' % predicted[3])
-    predicted[3] = np.mean(precip + [predicted[3]])
+if options.tune_rain:
+    if sum(precip) < 0.01:
+        print('Warning: overriding MOS-X prediction of %0.2f for rain with 0' %
+              predicted[3])
+        predicted[3] = 0.
+    elif predicted[3] > max(precip) or predicted[3] < min(precip):
+        print('Warning: MOS-X prediction for rainfall out of model range; ' +
+              'overriding MOS-X prediction of %0.2f with model mean' % predicted[3])
+        predicted[3] = np.mean(precip + [predicted[3]])
+else:
+    # At least make sure we aren't predicting negative values...
+    if predicted[3] < 0:
+        predicted[3] = 0.0
 
 # Round off daily values
 predicted[:3] = np.round(predicted[:3])
