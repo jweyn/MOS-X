@@ -332,7 +332,7 @@ def bufr(config, output_file=None, cycle='18'):
         os.makedirs(bufr_data_dir)
     bufrgruven = config['BUFR']['bufrgruven']
     if config['verbose']:
-        print('Using BUFKIT files in %s' % bufr_data_dir)
+        print('bufr: using BUFKIT files in %s' % bufr_data_dir)
     bufr_format = '%s/%s%s.%s_%s.buf'
     missing_dates = []
     models = config['BUFR']['bufr_models']
@@ -344,19 +344,19 @@ def bufr(config, output_file=None, cycle='18'):
         bufarg['date'] = datetime.strftime(date, '%Y%m%d')
         if date.year < 2010:
             if config['verbose']:
-                print('Skipping BUFR data for %s; data starts in 2010.' % bufarg['date'])
+                print('bufr: skipping BUFR data for %s; data starts in 2010.' % bufarg['date'])
             continue
         if config['verbose']:
-            print('Date: %s' % bufarg['date'])
+            print('bufr: date: %s' % bufarg['date'])
 
         for m in range(len(models)):
             if config['verbose']:
-                print('  Trying to retrieve BUFR data for %s...' % model_names[m])
+                print('bufr: trying to retrieve BUFR data for %s...' % model_names[m])
             bufr_new_name = bufr_format % (bufr_data_dir, bufarg['date'], '%02d' % int(bufarg['cycle']),
                                            model_names[m], bufarg['stations'])
             if os.path.isfile(bufr_new_name):
                 if config['verbose']:
-                    print('  File %s already exists; skipping!' % bufr_new_name)
+                    print('bufr: file %s already exists; skipping!' % bufr_new_name)
                 break
 
             if type(models[m]) == list:
@@ -370,12 +370,12 @@ def bufr(config, output_file=None, cycle='18'):
                         bufr_file.close()
                         os.rename(bufr_name, bufr_new_name)
                         if config['verbose']:
-                            print('    BUFR file found for %s at date %s.' % (model, bufarg['date']))
-                            print('    Writing BUFR file: %s' % bufr_new_name)
+                            print('bufr: BUFR file found for %s at date %s.' % (model, bufarg['date']))
+                            print('bufr: writing BUFR file: %s' % bufr_new_name)
                         break
                     except:
                         if config['verbose']:
-                            print('    BUFR file for %s at date %s not retrieved.' % (model, bufarg['date']))
+                            print('bufr: BUFR file for %s at date %s not retrieved.' % (model, bufarg['date']))
             else:
                 try:
                     model = models[m]
@@ -387,13 +387,13 @@ def bufr(config, output_file=None, cycle='18'):
                     bufr_file.close()
                     os.rename(bufr_name, bufr_new_name)
                     if config['verbose']:
-                        print('    BUFR file found for %s at date %s.' % (model, bufarg['date']))
-                        print('    Writing BUFR file: %s' % bufr_new_name)
+                        print('bufr: BUFR file found for %s at date %s.' % (model, bufarg['date']))
+                        print('bufr: writing BUFR file: %s' % bufr_new_name)
                 except:
                     if config['verbose']:
-                        print('    BUFR file for %s at date %s not retrieved.' % (model, bufarg['date']))
+                        print('bufr: BUFR file for %s at date %s not retrieved.' % (model, bufarg['date']))
             if not (os.path.isfile(bufr_new_name)):
-                print('Warning: No BUFR file found for model %s at date %s' % (
+                print('bufr: warning: no BUFR file found for model %s at date %s' % (
                     model_names[m], bufarg['date']))
                 missing_dates.append((date, model_names[m]))
 
@@ -408,17 +408,20 @@ def bufr(config, output_file=None, cycle='18'):
     for date in dates:
         date_str = datetime.strftime(date, '%Y%m%d')
         verif_date = date + timedelta(days=1)
-        start_dt = verif_date + timedelta(hours=6)  # START AT 18Z DAY BEFORE?
-        end_dt = verif_date + timedelta(hours=30)
+        start_dt = verif_date + timedelta(hours=config['forecast_hour_start'])
+        end_dt = verif_date + timedelta(hours=config['forecast_hour_start'] + 24)
         for model in model_names:
             if (date, model) in missing_dates:
-                print('Skipping %s data for %s; file missing.' % (model, date_str))
+                if config['verbose']:
+                    print('bufr: skipping %s data for %s; file missing.' % (model, date_str))
                 continue
-            print('Processing %s data for %s' % (model, date_str))
+            if config['verbose']:
+                print('bufr: processing %s data for %s' % (model, date_str))
             bufr_name = bufr_format % (bufr_data_dir, date_str, '%02d' % int(bufarg['cycle']), model,
                                        bufarg['stations'])
             if not (os.path.isfile(bufr_name)):
-                print('Skipping %s data for %s; file missing.' % (model, date_str))
+                if config['verbose']:
+                    print('bufr: skipping %s data for %s; file missing.' % (model, date_str))
                 continue
             profile = bufkit_parser_time_height(config, bufr_name, 6, start_dt, end_dt)
             sfc, daily = bufkit_parser_surface(bufr_name, 3, start_dt, end_dt)
@@ -433,7 +436,8 @@ def bufr(config, output_file=None, cycle='18'):
     # Export data
     if output_file is None:
         output_file = '%s/%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'])
-    print('-> Exporting to %s' % output_file)
+    if config['verbose']:
+        print('bufr: -> exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
         pickle.dump(bufr_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -451,7 +455,7 @@ def process(config, bufr, advection_diagnostic=True):
     :return: ndarray: array of formatted BUFR predictor values
     """
     if config['verbose']:
-        print('Processing array for BUFR data...')
+        print('bufr.process: processing array for BUFR data...')
     # PROF part of the BUFR data
     bufr_prof = get_array(bufr['PROF'])
     bufr_dims = list(range(len(bufr_prof.shape)))

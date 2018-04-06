@@ -129,18 +129,18 @@ def _cf6_wind(config):
     """
 
     if config['verbose']:
-        print('Searching for CF6 files in %s...' % config['SITE_ROOT'])
+        print('_cf6_wind: searching for CF6 files in %s' % config['SITE_ROOT'])
     allfiles = os.listdir(config['SITE_ROOT'])
     filelist = [f for f in allfiles if f.startswith(config['station_id'].upper()) and f.endswith('.cli')]
     filelist.sort()
     if len(filelist) == 0:
         raise IOError('No CF6 files found.')
     if config['verbose']:
-        print('  Found %d CF6 files.' % len(filelist))
+        print('_cf6_wind: found %d CF6 files.' % len(filelist))
 
     # Interpret CF6 files
     if config['verbose']:
-        print('Reading CF6 files...')
+        print('_cf6_wind: reading CF6 files')
     cf6_values = {}
     for file in filelist:
         year, month = re.search('(\d{4})(\d{2})', file).groups()
@@ -174,7 +174,7 @@ def _climo_wind(config, dates=None):
     import ulmo
 
     if config['verbose']:
-        print('Climo: fetching data from NCDC (may take a while)...')
+        print('_climo_wind: fetching data from NCDC (may take a while)...')
     v = 'WSF2'
     wind_dict = {}
     try:
@@ -190,7 +190,46 @@ def _climo_wind(config, dates=None):
     return wind_dict
 
 
-def verification(config, output_file=None, use_cf6=True, use_climo=True,):
+def pop_rain(series):
+    """
+    Converts a series of rain values into 0 or 1 depending on whether there is measurable rain
+    :param series:
+    :return:
+    """
+    new_series = series.copy()
+    new_series[series >= 0.01] = 1.
+    new_series[series < 0.01] = 0.
+    return new_series
+
+
+def categorical_rain(series):
+    """
+    Converts a series of rain values into categorical precipitation quantities a la MOS.
+    :param series:
+    :return:
+    """
+    new_series = series.copy()
+    for j in range(len(series)):
+        if series.iloc[j] < 0.01:
+            new_series.iloc[j] = 0.
+        elif series.iloc[j] < 0.10:
+            new_series.iloc[j] = 1.
+        elif series.iloc[j] < 0.25:
+            new_series.iloc[j] = 2.
+        elif series.iloc[j] < 0.50:
+            new_series.iloc[j] = 3.
+        elif series.iloc[j] < 1.00:
+            new_series.iloc[j] = 4.
+        elif series.iloc[j] < 2.00:
+            new_series.iloc[j] = 5.
+        elif series.iloc[j] >= 2.00:
+            new_series.iloc[j] = 6.
+        else:  # missing, or something else that's strange
+            new_series.iloc[j] = 0.
+    return new_series
+
+
+def verification(config, output_file=None, use_cf6=True, use_climo=True, force_rain_quantity=False):
     """
     Generates verification data from MesoWest and saves to a file, which is used to train the model and check test
     results.
@@ -199,13 +238,15 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
     :param output_file: str: path to output file
     :param use_cf6: bool: if True, uses wind values from CF6 files
     :param use_climo: bool: if True, uses wind values from NCDC climatology
+    :param force_rain_quantity: if True, returns the actual quantity of rain (rather than POP); useful for validation
+    files
     :return:
     """
     if output_file is None:
         output_file = '%s/%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'])
 
     dates = generate_dates(config)
-    api_dates = generate_dates(config, api=True, api_add_hour=30)
+    api_dates = generate_dates(config, api=True, api_add_hour=config['forecast_hour_start'] + 24)
 
     # If a time series is desired, then get hourly data
     if config['Model']['predict_timeseries']:
@@ -229,8 +270,8 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
     m = Meso(token=config['meso_token'])
 
     if config['verbose']:
-        print('MesoPy initialized for station %s' % config['station_id'])
-        print('Retrieving latest obs and metadata...')
+        print('verification: MesoPy initialized for station %s' % config['station_id'])
+        print('verification: retrieving latest obs and metadata')
     latest = m.latest(stid=config['station_id'])
     obs_list = list(latest['STATION'][0]['SENSOR_VARIABLES'].keys())
 
@@ -240,11 +281,11 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
 
     # Add variables to the api request if they exist
     if config['verbose']:
-        print('Searching for 6-hourly variables...')
+        print('verification: searching for 6-hourly variables...')
     for var in vars_option:
         if var in obs_list:
             if config['verbose']:
-                print('  Found variable %s, adding to data...' % var)
+                print('verification: found variable %s, adding to data' % var)
             vars_request += [var]
     vars_api = ''
     for var in vars_request:
@@ -258,7 +299,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
     obspd = pd.DataFrame()
     for api_date in api_dates:
         if config['verbose']:
-            print('Retrieving data from %s to %s...' % api_date)
+            print('verification: retrieving data from %s to %s' % api_date)
         obs = m.timeseries(stid=config['station_id'], start=api_date[0], end=api_date[1], vars=vars_api, units=units)
         obspd = pd.concat((obspd, pd.DataFrame.from_dict(obs['STATION'][0]['OBSERVATIONS'])), ignore_index=True)
 
@@ -281,10 +322,10 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
 
     # Change datetime column to datetime object, subtract 6 hours to use 6Z days
     if config['verbose']:
-        print('Setting time back 6 hours to analyze daily 6Z--6Z statistics...')
-    dateobj = pd.to_datetime(obspd['date_time']) - timedelta(hours=6)
+        print('verification: setting time back %d hours for daily statistics' % config['forecast_hour_start'])
+    dateobj = pd.to_datetime(obspd['date_time']) - timedelta(hours=config['forecast_hour_start'])
     obspd['date_time'] = dateobj
-    datename = 'date_time_minus_6'
+    datename = 'date_time_minus_%d' % config['forecast_hour_start']
     obspd = obspd.rename(columns={'date_time': datename})
 
     # Reformat data into hourly and daily
@@ -307,8 +348,8 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
     aggregate['precip_accum_one_hour'] = np.max
 
     if config['verbose']:
-        print('Grouping data by hour for hourly observations...')
-        print('  (Note that obs in hour H are reported at hour H, not H+1)')
+        print('verification: grouping data by hour for hourly observations')
+    # Note that obs in hour H are reported at hour H, not H+1
     obs_hourly = obspd.groupby([pd.DatetimeIndex(obspd[datename]).year,
                                 pd.DatetimeIndex(obspd[datename]).month,
                                 pd.DatetimeIndex(obspd[datename]).day,
@@ -339,39 +380,39 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         pass
 
     if config['verbose']:
-        print('Grouping data by day for daily verifications...')
+        print('verification: grouping data by day for daily verifications')
     obs_daily = obs_hourly.groupby([pd.DatetimeIndex(obs_hourly[datename]).year,
                                     pd.DatetimeIndex(obs_hourly[datename]).month,
                                     pd.DatetimeIndex(obs_hourly[datename]).day]).agg(aggregate)
 
     if config['verbose']:
-        print('Checking matching dates for daily obs and CF6...')
+        print('verification: checking matching dates for daily obs and CF6')
     if use_climo:
         try:
             climo_values = _climo_wind(config, dates)
-        except:
+        except BaseException as e:
             if config['verbose']:
-                print('  Warning: problem reading climo data.')
+                print("verification: warning: '%s' while reading climo data" % str(e))
             climo_values = {}
     else:
         if config['verbose']:
-            print('  Not using climo.')
+            print('verification: not using climo.')
         climo_values = {}
     if use_cf6:
         try:
             get_cf6_files(config)
         except BaseException as e:
             if config['verbose']:
-                print("  Warning: '%s' while getting CF6 files" % str(e))
+                print("verification: warning: '%s' while getting CF6 files" % str(e))
         try:
             cf6_values = _cf6_wind(config)
-        except:
+        except BaseException as e:
             if config['verbose']:
-                print('  Warning: no CF6 files found.')
+                print("verification: warning: '%s' while reading CF6 files" % str(e))
             cf6_values = {}
     else:
         if config['verbose']:
-            print('  Not using CF6.')
+            print('verification: not using CF6.')
         cf6_values = {}
     climo_values.update(cf6_values)  # CF6 has precedence
     count_rows = 0
@@ -383,13 +424,14 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
             cf6_wind = climo_values[date]['wind']
             if not (np.isnan(cf6_wind)):
                 if obs_wind - cf6_wind >= 5:
-                    print('  Warning: obs wind for %s much larger than wind from cf6/climo; using obs' % date)
+                    print('verification: warning: obs wind for %s much larger than wind from cf6/climo; using obs' % 
+                          date)
                 else:
                     obs_daily.loc[index, 'wind_speed'] = cf6_wind
             else:
                 count_rows -= 1
     if config['verbose']:
-        print('  Found %d matching rows.' % count_rows)
+        print('verification: found %d matching rows.' % count_rows)
 
     # Round
     round_dict = {'wind_speed': 0}
@@ -406,35 +448,35 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
 
     # Generation of final output data
     if config['verbose']:
-        print('Generating final verification dictionary...')
+        print('verification: generating final verification dictionary...')
     if 'air_temp_high_6_hour' in vars_request:
         obs_daily.rename(columns={'air_temp_high_6_hour': 'Tmax'}, inplace=True)
-        print('  Set column air_temp_high_6_hour to Tmax')
     else:
         obs_daily.rename(columns={'air_temp_max': 'Tmax'}, inplace=True)
-        print('  Set column air_temp_max to Tmax')
     if 'air_temp_low_6_hour' in vars_request:
         obs_daily.rename(columns={'air_temp_low_6_hour': 'Tmin'}, inplace=True)
-        print('  Set column air_temp_low_6_hour to Tmin')
     else:
         obs_daily.rename(columns={'air_temp_min': 'Tmin'}, inplace=True)
-        print('  Set column air_temp_min to Tmin')
     if 'precip_accum_six_hour' in vars_request:
         obs_daily.rename(columns={'precip_accum_six_hour': 'Rain'}, inplace=True)
-        print('  Set column precip_accum_six_hour to Rain')
     else:
         obs_daily.rename(columns={'precip_accum_one_hour': 'Rain'}, inplace=True)
-        print('  Set column precip_accum_one_hour to Rain')
     obs_daily.rename(columns={'wind_speed': 'Wind'}, inplace=True)
-    print('  Set column wind_speed to Wind')
 
+    # Deal with the rain depending on the type of forecast requested
     obs_daily['Rain'].fillna(0.0, inplace=True)
+    if config['Model']['rain_forecast_type'] == 'pop' and not force_rain_quantity:
+        obs_daily.loc[:, 'Rain'] = pop_rain(obs_daily['Rain'])
+    elif config['Model']['rain_forecast_type'] == 'categorical' and not force_rain_quantity:
+        obs_daily.loc[:, 'Rain'] = categorical_rain(obs_daily['Rain'])
+
+    # Set the date time index
     obs_daily = obs_daily.rename(columns={datename: 'date_time'})
     obs_daily = obs_daily.set_index('date_time')
 
     # Export final data
     if config['verbose']:
-        print('-> Exporting to %s' % output_file)
+        print('verification: -> exporting to %s' % output_file)
     export_cols = ['Tmax', 'Tmin', 'Wind', 'Rain']
     for col in obs_daily.columns:
         if col not in export_cols:
@@ -448,7 +490,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
             continue
         if np.any(np.isnan(day_dict.values())):
             if config['verbose']:
-                print('Omitting day %s; missing data' % date)
+                print('verification: warning: omitting day %s; missing data' % date)
             continue  # No verification can have missing values
         if config['Model']['predict_timeseries']:
             start = pd.Timestamp((date + timedelta(hours=5)))
@@ -458,11 +500,11 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
             except KeyError:
                 # No values for the day
                 if config['verbose']:
-                    print('Omitting day %s; missing data' % date)
+                    print('verification: warning: omitting day %s; missing data' % date)
                 continue
             if series.isnull().values.any():
                 if config['verbose']:
-                    print('Omitting day %s; missing data' % date)
+                    print('verification: warning: omitting day %s; missing data' % date)
                 continue
             series_dict = OrderedDict(series.to_dict(into=OrderedDict))
             day_dict.update(series_dict)
@@ -484,7 +526,7 @@ def process(config, verif):
     """
     if verif is not None:
         if config['verbose']:
-            print('Processing array for verification data...')
+            print('verification.process: processing array for verification data')
         num_days = len(verif.keys())
         variables = ['Tmax', 'Tmin', 'Wind', 'Rain']
         day_verif_array = np.full((num_days, len(variables)), np.nan, dtype=np.float64)

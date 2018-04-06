@@ -40,7 +40,7 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
 
     # Try retrieving the sounding, first checking for existing
     if config['verbose']:
-        print('  Retrieving sounding for %s...' % datetime.strftime(date, '%Y%m%d%H'))
+        print('upper_air: retrieving sounding for %s' % datetime.strftime(date, '%Y%m%d%H'))
     nan_sounding = False
     retrieve_sounding = False
     sndg_data_dir = config['Obs']['sounding_data_dir']
@@ -67,7 +67,7 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
             except:
                 if use_nan_sounding:
                     if config['verbose']:
-                        print('    Warning: unable to retrieve sounding; using nan.')
+                        print('upper_air: warning: unable to retrieve sounding; using nan.')
                     nan_sounding = True
                 else:
                     raise ValueError('error retrieving sounding for %s' % date)
@@ -109,13 +109,13 @@ def get_obs_hourly(config, api_dates, vars_api, units):
     # Initialize Meso
     m = Meso(token=config['meso_token'])
     if config['verbose']:
-        print('MesoPy initialized for station %s' % config['station_id'])
+        print('get_obs_hourly: MesoPy initialized for station %s' % config['station_id'])
 
     # Retrieve data
     obs_final = pd.DataFrame()
     for api_date in api_dates:
         if config['verbose']:
-            print('Retrieving data from %s to %s...' % api_date)
+            print('get_obs_hourly: retrieving data from %s to %s' % api_date)
         obs = m.timeseries(stid=config['station_id'], start=api_date[0], end=api_date[1], vars=vars_api, units=units,
                            hfmetars='0')
         obspd = pd.DataFrame.from_dict(obs['STATION'][0]['OBSERVATIONS'])
@@ -141,7 +141,7 @@ def get_obs_hourly(config, api_dates, vars_api, units):
         # Reformat data into hourly obs
         # Find mode of minute data: where the hourly metars are
         if config['verbose']:
-            print('Finding METAR observation times...')
+            print('get_obs_hourly: finding METAR observation times...')
         minutes = []
         for row in obspd.iterrows():
             date = row[1][datename]
@@ -151,7 +151,7 @@ def get_obs_hourly(config, api_dates, vars_api, units):
         minute_mode = minute_count.size - rev_count.argmax() - 1
 
         if config['verbose']:
-            print('Finding hourly data...')
+            print('get_obs_hourly: finding hourly data...')
         obs_hourly = obspd[pd.DatetimeIndex(obspd[datename]).minute == minute_mode]
         obs_hourly = obs_hourly.set_index(datename)
 
@@ -217,7 +217,7 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
 
     # Retrieve upper-air sounding data
     if config['verbose']:
-        print('Retrieving upper-air sounding data...')
+        print('obs: retrieving upper-air sounding data')
     soundings = OrderedDict()
     if config['Obs']['use_soundings']:
         for date in dates:
@@ -229,13 +229,13 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
                     sounding = upper_air(sounding_date, use_nan_sounding, use_existing=use_existing_sounding)
                     soundings[date][sounding_date] = sounding
                 except:
-                    print('Warning: problem retrieving soundings for %s' % datetime.strftime(date, '%Y%m%d'))
+                    print('obs: warning: problem retrieving soundings for %s' % datetime.strftime(date, '%Y%m%d'))
                     soundings.pop(date)
                     break
 
     # Create dictionary of days
     if config['verbose']:
-        print('Converting to output dictionary...')
+        print('obs: converting to output dictionary')
     obs_export = OrderedDict({'SFC': OrderedDict(),
                               'SNDG': OrderedDict()})
     for date in dates:
@@ -250,7 +250,7 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
 
     # Export final data
     if config['verbose']:
-        print('-> Exporting to %s' % output_file)
+        print('obs: -> exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
         pickle.dump(obs_export, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -267,7 +267,7 @@ def process(config, obs):
     :return:
     """
     if config['verbose']:
-        print('Processing array for obs data...')
+        print('ons.process: processing array for obs data...')
 
     # Surface observations
     sfc = obs['SFC']

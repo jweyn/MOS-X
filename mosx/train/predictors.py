@@ -77,7 +77,7 @@ def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None,
 
     if output_file is None:
         output_file = '%s/%s_predictors.pkl' % (config['site_directory'], config['station_id'])
-    print('-> Exporting to %s' % output_file)
+    print('predictors: -> exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
         pickle.dump(export_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 

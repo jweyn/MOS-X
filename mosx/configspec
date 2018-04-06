@@ -7,6 +7,7 @@ lowest_p_level = float()
 data_start_date = string(min=8, max=8)
 data_end_date = string(min=8, max=8)
 is_season = boolean(default=False)
+forecast_hour_start = integer(0, 24, default=6)
 meso_token = string()
 verbose = boolean(default=False)
 [BUFR]
@@ -23,6 +24,7 @@ verbose = boolean(default=False)
     regressor = string(default='ensemble.RandomForestRegressor')
     train_individual = boolean(default=False)
     predict_timeseries = boolean(default=False)
+    rain_forecast_type = option('pop', 'categorical', 'quantity', default='pop')
     [[Parameters]]
 [Validate]
     start_date = string(min=8, max=8)

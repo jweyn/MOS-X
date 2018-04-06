@@ -13,7 +13,6 @@ import os
 import sys
 import mosx
 import numpy as np
-import pandas as pd
 from collections import OrderedDict
 from optparse import OptionParser
 from datetime import datetime, timedelta
@@ -101,7 +100,9 @@ predicted = np.squeeze(predicted)
 
 # Print forecast!
 
-print('\nFor day %s at %s, the predicted forecast is' % (new_end_date, 
+print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
+
+print('\nFor day %s at %s, the predicted forecast is' % (new_end_date,
                                                          config['station_id']))
 print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[:4]))
 
@@ -201,7 +202,7 @@ if prob:
                   (0.8, 0.7, 0.1)]
         titles = ['High temperature', 'Low temperature', 'Max 2-min wind', 'Precipitation']
         for plot_num in range(4):
-            if plot_num != 3:
+            if plot_num != 3 or (plot_num == 3 and config['Model']['rain_forecast_type'] != 'quantity'):
                 unit = 1.
                 decimals = 1
             else:

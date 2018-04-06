@@ -399,7 +399,7 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
         all_dates = set(obs_dates).intersection(bufr_dates)
     if len(all_dates) == 0:
         raise ValueError('Sorry, no matching dates found in data!')
-    print('Found %d matching dates.' % len(all_dates))
+    print('find_matching_dates: found %d matching dates.' % len(all_dates))
     if return_data:
         for lev in ['SFC', 'PROF', 'DAY']:
             for model in bufr[lev].keys():
@@ -465,14 +465,14 @@ def unpickle(bufr_file, obs_file, verif_file):
     :param verif_file: str: full path to pickled VERIFICATION data file
     :return:
     """
-    print('Loading BUFKIT data from %s...' % bufr_file)
+    print('util: loading BUFKIT data from %s' % bufr_file)
     with open(bufr_file, 'rb') as handle:
         bufr = pickle.load(handle)
-    print('Loading OBS data from %s...' % obs_file)
+    print('util: loading OBS data from %s' % obs_file)
     with open(obs_file, 'rb') as handle:
         obs = pickle.load(handle)
     if verif_file is not None:
-        print('Loading VERIFICATION data from %s...' % verif_file)
+        print('util: loading VERIFICATION data from %s' % verif_file)
         with open(verif_file, 'rb') as handle:
             verif = pickle.load(handle)
     else:

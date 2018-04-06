@@ -259,6 +259,8 @@ if options.mos_flag:
 
 # Print forecasts!
 
+print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
+
 forecast_format = '%0.0f/%0.0f/%0.0f/%0.2f'
 variables = ['Tmax', 'Tmin', 'Wind', 'Rain']
 if options.mos_flag:

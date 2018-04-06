@@ -160,7 +160,7 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
     else:
         p_train, t_train, r_train = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models)
 
-    print('Training the estimator...')
+    print('train: training the estimator')
     if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
         estimator.fit(p_train, t_train, rain_array=r_train)
     else:
@@ -168,7 +168,7 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
 
     if estimator_file is None:
         estimator_file = '%s/%s_mosx.pkl' % (config['MOSX_ROOT'], config['station_id'])
-    print('-> Exporting to %s' % estimator_file)
+    print('train: -> exporting to %s' % estimator_file)
     with open(estimator_file, 'wb') as handle:
         pickle.dump(estimator, handle, protocol=pickle.HIGHEST_PROTOCOL)
 

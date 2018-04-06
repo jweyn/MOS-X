@@ -104,6 +104,8 @@ predicted, all_predicted, predicted_timeseries = mosx.predict.predict(config, pr
 
 # Print forecasts!
 
+print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
+
 print('\nDay,verification,forecast')
 for day in range(len(all_dates)):
     date = all_dates[day]
