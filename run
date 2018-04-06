@@ -57,7 +57,7 @@ config = mosx.util.get_config(config_file)
 if datestr == 'tomorrow':
     date = datetime.utcnow()
     # BUFR cycle
-    cycle = str(6 * (((date.hour + 24 - 4) % 24) // 6))
+    cycle = str(6 * (((date.hour + 24 - 5) % 24) // 6))
     verif_date = datetime(date.year, date.month, date.day) + timedelta(days=1)
 else:
     cycle = '18'

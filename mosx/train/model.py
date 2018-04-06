@@ -8,7 +8,7 @@
 Methods for training scikit-learn models.
 """
 
-from mosx.util import get_object, TimeSeriesEstimator, RainTuningEstimator
+from mosx.util import get_object, TimeSeriesEstimator, RainTuningEstimator, to_bool
 import pickle
 import numpy as np
 
@@ -76,8 +76,9 @@ def build_estimator(config):
     if rain_tuning is not None and regressor.startswith('ensemble'):
         if config['verbose']:
             print('build_estimator: using rain tuning...')
-        rain_tuning.pop('use_raw_rain')
-        estimator = RainTuningEstimator(estimator, **rain_tuning)
+        rain_kwargs = rain_tuning.copy()
+        rain_kwargs.pop('use_raw_rain', None)
+        estimator = RainTuningEstimator(estimator, **rain_kwargs)
 
     return estimator
 
@@ -97,6 +98,7 @@ def build_train_data(config, predictor_file, no_obs=False, no_models=False, test
 
     if config['verbose']:
         print('build_train_data: reading predictor file')
+    rain_tuning = config['Model'].get('Rain tuning', None)
     with open(predictor_file, 'rb') as handle:
         data = pickle.load(handle)
 
@@ -114,15 +116,27 @@ def build_train_data(config, predictor_file, no_obs=False, no_models=False, test
         predictors = data['OBS']
     else:
         predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)
+    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+        predictors = np.concatenate((predictors, data.rain), axis=1)
+        rain_shape = data.rain.shape[-1]
     targets = data['VERIF']
 
     if test_size > 0:
         p_train, p_test, t_train, t_test = train_test_split(predictors, targets, test_size=test_size)
-        return p_train, t_train, p_test, t_test
+        if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+            r_train = p_train[:, -1*rain_shape:]
+            p_train = p_train[:, :-1*rain_shape]
+            r_test = p_test[:, -1 * rain_shape:]
+            p_test = p_test[:, :-1 * rain_shape]
+        else:
+            r_train = None
+            r_test = None
+        return p_train, t_train, r_train, p_test, t_test, r_test
     else:
-        p_train = predictors
-        t_train = targets
-        return p_train, t_train
+        if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+            return predictors, targets, data.rain
+        else:
+            return predictors, targets, None
 
 
 def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=False, test_size=0):
@@ -139,14 +153,18 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
     :return: matplotlib Figure if plot_learning_curve is True
     """
     estimator = build_estimator(config)
+    rain_tuning = config['Model'].get('Rain tuning', None)
     if test_size > 0:
-        p_train, t_train, p_test, t_test = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models,
-                                                            test_size=test_size)
+        p_train, t_train, r_train, p_test, t_test, r_test = build_train_data(config, predictor_file, no_obs=no_obs,
+                                                                             no_models=no_models, test_size=test_size)
     else:
-        p_train, t_train = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models)
+        p_train, t_train, r_train = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models)
 
     print('Training the estimator...')
-    estimator.fit(p_train, t_train)
+    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+        estimator.fit(p_train, t_train, rain_array=r_train)
+    else:
+        estimator.fit(p_train, t_train)
 
     if estimator_file is None:
         estimator_file = '%s/%s_mosx.pkl' % (config['MOSX_ROOT'], config['station_id'])
@@ -155,7 +173,7 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
         pickle.dump(estimator, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     if test_size > 0:
-        return p_test, t_test
+        return p_test, t_test, r_test
     return
 
 

@@ -11,7 +11,7 @@ Methods for predicting from scikit-learn models.
 import pickle
 import numpy as np
 import pandas as pd
-from ..util import dewpoint
+from ..util import dewpoint, to_bool
 
 
 def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_rain=False):
@@ -29,13 +29,17 @@ def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_
     # Load the predictor data and estimator
     with open(predictor_file, 'rb') as handle:
         predictor_data = pickle.load(handle)
+    rain_tuning = config['Model'].get('Rain tuning', None)
     if config['verbose']:
         print('predict: loading estimator %s' % config['Model']['estimator_file'])
     with open(config['Model']['estimator_file'], 'rb') as handle:
         estimator = pickle.load(handle)
 
     predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
-    predicted = estimator.predict(predictors)
+    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+        predicted = estimator.predict(predictors, rain_array=predictor_data.rain)
+    else:
+        predicted = estimator.predict(predictors)
     precip = predictor_data.rain
 
     # Check for precipitation override

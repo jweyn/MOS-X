@@ -68,14 +68,14 @@ if not use_existing:
 
 # Re-format predictors even if using existing raw data
 print('\n--- MOS-X build: formatting predictor and target data...\n')
-# mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file)
+mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file)
 
 
 # Train the estimator and save it
 
 print('\n--- MOS-X build: generating and training estimator...\n')
 
-p_test, t_test = mosx.train.train(config, predictor_file, config['Model']['estimator_file'], test_size=1)
+p_test, t_test, r_test = mosx.train.train(config, predictor_file, config['Model']['estimator_file'], test_size=1)
 
 
 # Test the predictor
@@ -83,10 +83,14 @@ p_test, t_test = mosx.train.train(config, predictor_file, config['Model']['estim
 print('Loading estimator file %s' % config['Model']['estimator_file'])
 with open(config['Model']['estimator_file'], 'rb') as handle:
     estimator = pickle.load(handle)
+rain_tuning = config['Model'].get('Rain tuning', None)
 
 # Make a prediction
 expected = t_test
-predicted = estimator.predict(p_test)
+if rain_tuning is not None and mosx.util.to_bool(rain_tuning.get('use_raw_rain', False)):
+    predicted = estimator.predict(p_test, rain_array=r_test)
+else:
+    predicted = estimator.predict(p_test)
 
 num_test = t_test.shape[0]
 for t in range(num_test):

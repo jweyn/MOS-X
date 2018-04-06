@@ -38,6 +38,10 @@ class TimeSeriesEstimator(object):
                 pass
         # Apparently still have to do this
         self.named_steps = self.daily_estimator.named_steps
+        try:
+            self.estimators_ = self.daily_estimator.estimators_
+        except AttributeError:
+            pass
         self.array_form = True
         if not hasattr(self, 'verbose'):
             self.verbose = 1
@@ -92,6 +96,10 @@ class RainTuningEstimator(object):
             except AttributeError:
                 pass
         self.named_steps = self.base_estimator.named_steps
+        try:
+            self.estimators_ = self.base_estimator.estimators_
+        except AttributeError:
+            pass
         self.rain_processor = RandomForestRegressor(**kwargs)
         if isinstance(self.base_estimator, Pipeline):
             self._forest = self.base_estimator.named_steps['regressor']
@@ -547,3 +555,42 @@ def dewpoint(T, RH):
     T = FtoC(T)
     TD = c * gamma(T, RH) / (b - gamma(T, RH))
     return CtoF(TD)
+
+
+def to_bool(x):
+    """Convert an object to boolean.
+
+    Examples:
+    >>> print to_bool('TRUE')
+    True
+    >>> print to_bool(True)
+    True
+    >>> print to_bool(1)
+    True
+    >>> print to_bool('FALSE')
+    False
+    >>> print to_bool(False)
+    False
+    >>> print to_bool(0)
+    False
+    >>> print to_bool('Foo')
+    Traceback (most recent call last):
+    ValueError: Unknown boolean specifier: 'Foo'.
+    >>> print to_bool(None)
+    Traceback (most recent call last):
+    ValueError: Unknown boolean specifier: 'None'.
+
+    This function (c) Tom Keffer, weeWX.
+    """
+    try:
+        if x.lower() in ['true', 'yes']:
+            return True
+        elif x.lower() in ['false', 'no']:
+            return False
+    except AttributeError:
+        pass
+    try:
+        return bool(int(x))
+    except (ValueError, TypeError):
+        pass
+    raise ValueError("Unknown boolean specifier: '%s'." % x)

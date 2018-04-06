@@ -23,7 +23,6 @@ verbose = boolean(default=False)
     regressor = string(default='ensemble.RandomForestRegressor')
     train_individual = boolean(default=False)
     predict_timeseries = boolean(default=False)
-    tune_rain = boolean(default=False)
     [[Parameters]]
 [Validate]
     start_date = string(min=8, max=8)
