@@ -27,15 +27,16 @@ def build_estimator(config):
     rain_tuning = config['Model'].get('Rain tuning', None)
     Regressor = get_object('sklearn.%s' % regressor)
     if config['verbose']:
-        print('Using sklearn.%s as estimator...' % regressor)
+        print('build_estimator: using sklearn.%s as estimator...' % regressor)
 
     from sklearn.preprocessing import Imputer
     from sklearn.preprocessing import StandardScaler as Scaler
     from sklearn.pipeline import Pipeline
 
     # Create and train the learning algorithm
-    print('Here are the parameters passed to the learning algorithm...')
-    print(sklearn_kwargs)
+    if config['verbose']:
+        print('build_estimator: here are the parameters passed to the learning algorithm...')
+        print(sklearn_kwargs)
 
     # Create the pipeline list
     pipeline = [("imputer", Imputer(missing_values=np.nan, strategy="mean", axis=0))]
@@ -51,11 +52,13 @@ def build_estimator(config):
     # Create the regressor object
     regressor_obj = Regressor(**sklearn_kwargs)
     if ada_boost is not None:
-        print('Using Ada boosting...')
+        if config['verbose']:
+            print('build_estimator: using Ada boosting...')
         from sklearn.ensemble import AdaBoostRegressor
         regressor_obj = AdaBoostRegressor(regressor_obj, **ada_boost)
     if train_individual:
-        print('Training separate models for each parameter...')
+        if config['verbose']:
+            print('build_estimator: training separate models for each parameter...')
         from sklearn.multioutput import MultiOutputRegressor
         multi_regressor = MultiOutputRegressor(regressor_obj, 4)
         pipeline.append(("regressor", multi_regressor))
@@ -71,7 +74,9 @@ def build_estimator(config):
         estimator = Pipeline(pipeline)
 
     if rain_tuning is not None and regressor.startswith('ensemble'):
-        print('Using rain tuning...')
+        if config['verbose']:
+            print('build_estimator: using rain tuning...')
+        rain_tuning.pop('use_raw_rain')
         estimator = RainTuningEstimator(estimator, **rain_tuning)
 
     return estimator
@@ -91,7 +96,7 @@ def build_train_data(config, predictor_file, no_obs=False, no_models=False, test
     from sklearn.model_selection import train_test_split
 
     if config['verbose']:
-        print('Reading predictor file...')
+        print('build_train_data: reading predictor file')
     with open(predictor_file, 'rb') as handle:
         data = pickle.load(handle)
 
@@ -101,11 +106,11 @@ def build_train_data(config, predictor_file, no_obs=False, no_models=False, test
         no_models = False
     if no_obs:
         if config['verbose']:
-            print('Not using observations to train')
+            print('build_train_data: not using observations to train')
         predictors = data['BUFKIT']
     elif no_models:
         if config['verbose']:
-            print('Not using models to train')
+            print('build_train_data: not using models to train')
         predictors = data['OBS']
     else:
         predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)

@@ -14,20 +14,114 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import pickle
+import requests
 from collections import OrderedDict
 from mosx.MesoPy import Meso
 from mosx.obs.methods import get_obs_hourly
 from mosx.util import generate_dates, get_array
 
 
-def cf6_parser(config):
+def get_cf6_files(config, num_files=1):
+    """
+    After code by Luke Madaus
+
+    Retrieves CF6 climate verification data released by the NWS. Parameter num_files determines how many recent files
+    are downloaded.
+    """
+
+    # Create directory if it does not exist
+    site_directory = config['SITE_ROOT']
+
+    # Construct the web url address. Check if a special 3-letter station ID is provided.
+    nws_url = 'http://forecast.weather.gov/product.php?site=NWS&issuedby=%s&product=CF6&format=TXT'
+    try:
+        stid3 = config['station_id3']
+    except KeyError:
+        stid3 = config['station_id'][1:].upper()
+    nws_url = nws_url % stid3
+
+    # Determine how many files (iterations of product) we want to fetch
+    if num_files == 1:
+        if config['verbose']:
+            print('get_cf6_files: retrieving latest CF6 file for %s' % config['station_id'])
+    else:
+        if config['verbose']:
+            print('get_cf6_files: retrieving %s archived CF6 files for %s' % (num_files, config['station_id']))
+
+    # Fetch files
+    for r in range(1, num_files + 1):
+        # Format the web address: goes through 'versions' on NWS site which correspond to increasingly older files
+        version = 'version=%d&glossary=0' % r
+        nws_site = '&'.join((nws_url, version))
+        response = requests.get(nws_site)
+        cf6_data = response.text
+
+        # Remove the header
+        try:
+            body_and_footer = cf6_data.split('CXUS')[1]  # Mainland US
+        except IndexError:
+            try:
+                body_and_footer = cf6_data.split('CXHW')[1]  # Hawaii
+            except IndexError:
+                body_and_footer = cf6_data.split('CXAK')[1]  # Alaska
+        body_and_footer_lines = body_and_footer.splitlines()
+        if len(body_and_footer_lines) <= 2:
+            body_and_footer = cf6_data.split('000')[2]
+
+        # Remove the footer
+        body = body_and_footer.split('[REMARKS]')[0]
+
+        # Find the month and year of the file
+        current_year = re.search('YEAR: *(\d{4})', body).groups()[0]
+        try:
+            current_month = re.search('MONTH: *(\D{3,9})', body).groups()[0]
+            current_month = current_month.strip()  # Gets rid of newlines and whitespace
+            datestr = '%s %s' % (current_month, current_year)
+            file_date = datetime.strptime(datestr, '%B %Y')
+        except:  # Some files have a different formatting, although this may be fixed now.
+            current_month = re.search('MONTH: *(\d{2})', body).groups()[0]
+            current_month = current_month.strip()
+            datestr = '%s %s' % (current_month, current_year)
+            file_date = datetime.strptime(datestr, '%m %Y')
+
+        # Write to a temporary file, check if output file exists, and if so, make sure the new one has more data
+        datestr = file_date.strftime('%Y%m')
+        filename = '%s/%s_%s.cli' % (site_directory, config['station_id'].upper(), datestr)
+        temp_file = '%s/temp.cli' % site_directory
+        with open(temp_file, 'w') as out:
+            out.write(body)
+
+        def file_len(file_name):
+            with open(file_name) as f:
+                for i, l in enumerate(f):
+                    pass
+                return i + 1
+
+        if os.path.isfile(filename):
+            old_file_len = file_len(filename)
+            new_file_len = file_len(temp_file)
+            if old_file_len < new_file_len:
+                if config['verbose']:
+                    print('get_cf6_files: overwriting %s' % filename)
+                os.remove(filename)
+                os.rename(temp_file, filename)
+            else:
+                if config['verbose']:
+                    print('get_cf6_files: %s already exists' % filename)
+        else:
+            if config['verbose']:
+                print('get_cf6_files: writing %s' % filename)
+            os.rename(temp_file, filename)
+
+
+def _cf6_wind(config):
     """
     After code by Luke Madaus
 
     This function is used internally only.
 
     Generates wind verification values from climate CF6 files stored in SITE_ROOT. These files can be generated
-    externally by get_cf6_files.py. This function is not necessary if climo data from climo_wind is found, except for
+    externally by get_cf6_files.py. This function is not necessary if climo data from _climo_wind is found, except for
     recent values which may not be in the NCDC database yet.
 
     :param config:
@@ -69,7 +163,7 @@ def cf6_parser(config):
     return cf6_values
 
 
-def climo_wind(config, dates=None):
+def _climo_wind(config, dates=None):
     """
      Fetches climatological wind data using ulmo package to retrieve NCDC archives.
 
@@ -254,7 +348,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         print('Checking matching dates for daily obs and CF6...')
     if use_climo:
         try:
-            climo_values = climo_wind(config, dates)
+            climo_values = _climo_wind(config, dates)
         except:
             if config['verbose']:
                 print('  Warning: problem reading climo data.')
@@ -265,7 +359,12 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
         climo_values = {}
     if use_cf6:
         try:
-            cf6_values = cf6_parser(config)
+            get_cf6_files(config)
+        except BaseException as e:
+            if config['verbose']:
+                print("  Warning: '%s' while getting CF6 files" % str(e))
+        try:
+            cf6_values = _cf6_wind(config)
         except:
             if config['verbose']:
                 print('  Warning: no CF6 files found.')
@@ -353,7 +452,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True,):
             continue  # No verification can have missing values
         if config['Model']['predict_timeseries']:
             start = pd.Timestamp((date + timedelta(hours=5)))
-            end = pd.Timestamp((date + timedelta(hours=29)))
+            end = pd.Timestamp((date + timedelta(hours=30)))
             try:
                 series = obs_hourly_verify.loc[start:end]
             except KeyError:

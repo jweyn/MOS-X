@@ -27,10 +27,20 @@ class TimeSeriesEstimator(object):
     Wrapper class for containing separately-trained daily and timeseries estimators.
     """
     def __init__(self, daily_estimator, timeseries_estimator):
-        self.array_form = True
         self.daily_estimator = daily_estimator
         self.timeseries_estimator = timeseries_estimator
+        # Inherit attributes from the daily estimator by default.
+        # Apparently only 'steps' and 'memory' are in __dict__ for a Pipeline. BS.
+        for attr in self.daily_estimator.__dict__.keys():
+            try:
+                setattr(self, attr, getattr(self.daily_estimator, attr))
+            except AttributeError:
+                pass
+        # Apparently still have to do this
         self.named_steps = self.daily_estimator.named_steps
+        self.array_form = True
+        if not hasattr(self, 'verbose'):
+            self.verbose = 1
 
     def fit(self, predictor_array, verification_array, **kwargs):
         """
@@ -40,9 +50,11 @@ class TimeSeriesEstimator(object):
         :param kwargs: kwargs passed to fit methods
         :return:
         """
-        print('Fitting DAILY estimator...')
+        if self.verbose > 0:
+            print('TimeSeriesEstimator: fitting DAILY estimator')
         self.daily_estimator.fit(predictor_array, verification_array[:, :4], **kwargs)
-        print('Fitting TIMESERIES estimator...')
+        if self.verbose > 0:
+            print('TimeSeriesEstimator: fitting TIMESERIES estimator')
         self.timeseries_estimator.fit(predictor_array, verification_array[:, 4:], **kwargs)
 
     def predict(self, predictor_array, **kwargs):
@@ -73,57 +85,66 @@ class RainTuningEstimator(object):
         :param kwargs: passed to scikit-learn random forest rain processing algorithm
         """
         self.base_estimator = estimator
+        # Inherit attributes from the base estimator
+        for attr in self.base_estimator.__dict__.keys():
+            try:
+                setattr(self, attr, getattr(self.base_estimator, attr))
+            except AttributeError:
+                pass
         self.named_steps = self.base_estimator.named_steps
         self.rain_processor = RandomForestRegressor(**kwargs)
         if isinstance(self.base_estimator, Pipeline):
-            self.forest = self.named_steps['regressor']
-            self.imputer = self.named_steps['imputer']
+            self._forest = self.base_estimator.named_steps['regressor']
+            self._imputer = self.base_estimator.named_steps['imputer']
         else:
-            self.imputer = None
-            self.forest = self.base_estimator
+            self._imputer = None
+            self._forest = self.base_estimator
+        if not hasattr(self, 'verbose'):
+            self.verbose = 1
 
     def _get_tree_rain_prediction(self, X):
         # Get predictions from individual trees.
         num_samples = X.shape[0]
-        if self.imputer is not None:
-            X = self.imputer.transform(X)
-        if isinstance(self.forest, MultiOutputRegressor):
-            num_trees = len(self.forest.estimators_[0].estimators_)
+        if self._imputer is not None:
+            X = self._imputer.transform(X)
+        if isinstance(self._forest, MultiOutputRegressor):
+            num_trees = len(self._forest.estimators_[0].estimators_)
             predicted_rain = np.zeros((num_samples, num_trees))
             for s in range(num_samples):
                 Xs = X[s].reshape(1, -1)
                 for t in range(num_trees):
                     try:
-                        predicted_rain[s, t] = self.forest.estimators_[3].estimators_[t].predict(Xs)
+                        predicted_rain[s, t] = self._forest.estimators_[3].estimators_[t].predict(Xs)
                     except AttributeError:
-                        # Work around an error in sklearn where GBTrees have length-1 ndarrays...
-                        predicted_rain[s, t] = self.forest.estimators_[3].estimators_[t][0].predict(Xs)
+                        # Work around the 2-D array of estimators for GBTrees
+                        predicted_rain[s, t] = self._forest.estimators_[3].estimators_[t][0].predict(Xs)
         else:
-            num_trees = len(self.forest.estimators_)
+            num_trees = len(self._forest.estimators_)
             predicted_rain = np.zeros((num_samples, num_trees))
             for s in range(num_samples):
                 Xs = X[s].reshape(1, -1)
                 for t in range(num_trees):
                     try:
-                        predicted_rain[s, t] = self.forest.estimators_[t].predict(Xs)
+                        predicted_rain[s, t] = self._forest.estimators_[t].predict(Xs)
                     except AttributeError:
                         # Work around an error in sklearn where GBTrees have length-1 ndarrays...
-                        predicted_rain[s, t] = self.forest.estimators_[t][0].predict(Xs)
+                        predicted_rain[s, t] = self._forest.estimators_[t][0].predict(Xs)
         return predicted_rain
 
     def _get_distribution(self, p_rain):
         # Get the mean, std, and number of 0 forecasts from the estimator.
         mean = np.mean(p_rain, axis=1)
         std = np.std(p_rain, axis=1)
-        zero_frac = 1. * np.sum(p_rain < 0.005, axis=1) / p_rain.shape[1]
+        zero_frac = 1. * np.sum(p_rain < 0.01, axis=1) / p_rain.shape[1]
         return np.stack((mean, std, zero_frac), axis=1)
 
-    def fit(self, predictor_array, verification_array, **kwargs):
+    def fit(self, predictor_array, verification_array, rain_array=None, **kwargs):
         """
         Fit the estimator and the post-processor.
 
         :param predictor_array: ndarray-like: predictor features
         :param verification_array: ndarray-like: truth values
+        :param rain_array: ndarray-like: raw rain from the models
         :param kwargs: passed to the estimator's 'fit' method
         :return:
         """
@@ -131,31 +152,41 @@ class RainTuningEstimator(object):
         self.base_estimator.fit(predictor_array, verification_array, **kwargs)
 
         # Now generate the distribution information from the individual trees in the forest
-        print('Fitting RainTuningEstimator post-processor...')
+        if self.verbose > 0:
+            print('RainTuningEstimator: getting ensemble rain predictions')
         predicted_rain = self._get_tree_rain_prediction(predictor_array)
         rain_distribution = self._get_distribution(predicted_rain)
+        # If raw rain values are given, add those to the distribution
+        if rain_array is not None:
+            rain_distribution = np.concatenate((rain_distribution, rain_array), axis=1)
 
         # Fit a random forest post-processor
+        if self.verbose > 0:
+            print('RainTuningEstimator: fitting rain post-processor')
         self.rain_processor.fit(rain_distribution, verification_array[:, 3])
 
-    def predict(self, predictor_array, rain_tuning=True, **kwargs):
+    def predict(self, predictor_array, rain_tuning=True, rain_array=None, **kwargs):
         """
         Return a prediction from the estimator with post-processed rain.
         :param predictor_array: ndarray-like: predictor features
         :param rain_tuning: bool: toggle option to disable rain tuning in prediction
+        :param rain_array: ndarray-like: raw rain values from models. Must be provided if fit() was called using raw
+        rain values too and rain_tuning is True.
         :param kwargs: passed to estimator's 'predict' method
         :return: array of predictions
         """
         # Predict with the estimator as usual
         predicted = self.base_estimator.predict(predictor_array, **kwargs)
 
-        # Get the distribution from individual trees
-        predicted_rain = self._get_tree_rain_prediction(predictor_array)
-        rain_distribution = self._get_distribution(predicted_rain)
-
         # Now get the tuned rain
         if rain_tuning:
-            print('Tuning rain prediction...')
+            if self.verbose > 0:
+                print('RainTuningEstimator: tuning rain prediction')
+            # Get the distribution from individual trees
+            predicted_rain = self._get_tree_rain_prediction(predictor_array)
+            rain_distribution = self._get_distribution(predicted_rain)
+            if rain_array is not None:
+                rain_distribution = np.concatenate((rain_distribution, rain_array), axis=1)
             tuned_rain = self.rain_processor.predict(rain_distribution)
             predicted[:, 3] = tuned_rain
 
@@ -439,3 +470,80 @@ def unpickle(bufr_file, obs_file, verif_file):
     else:
         verif = None
     return bufr, obs, verif
+
+
+def get_ghcn_stid(config, stid):
+    """
+    After code by Luke Madaus.
+
+    Gets the GHCN station ID from the 4-letter station ID.
+    """
+    main_addr = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa'
+
+    site_directory = config['SITE_ROOT']
+    # Check to see that ish-history.txt exists
+    stations_file = 'isd-history.txt'
+    stations_filename = '%s/%s' % (site_directory, stations_file)
+    if not os.path.exists(stations_filename):
+        print('get_ghcn_stid: downloading site name database')
+        try:
+            from urllib2 import urlopen
+            response = urlopen('%s/%s' % (main_addr, stations_file))
+            with open(stations_filename, 'w') as f:
+                f.write(response.read())
+        except BaseException as e:
+            print('get_ghcn_stid: unable to download site name database')
+            print("*** Reason: '%s'" % str(e))
+
+    # Now open this file and look for our siteid
+    site_found = False
+    infile = open(stations_filename, 'r')
+    station_wbans = []
+    station_ghcns = []
+    for line in infile:
+        if stid.upper() in line:
+            linesp = line.split()
+            if (not linesp[0].startswith('99999') and not site_found
+                    and not linesp[1].startswith('99999')):
+                try:
+                    site_wban = int(linesp[0])
+                    station_ghcn = int(linesp[1])
+                    # site_found = True
+                    print('get_ghcn_stid: site found for %s (%s)' %
+                          (stid, station_ghcn))
+                    station_wbans.append(site_wban)
+                    station_ghcns.append(station_ghcn)
+                except:
+                    continue
+    if len(station_wbans) == 0:
+        raise ValueError('get_ghcn_stid error: so station found for %s' % stid)
+
+    # Format station as USW...
+    usw_format = 'USW000%05d'
+    return usw_format % station_ghcns[0]
+
+
+# ==================================================================================================================== #
+# Conversion functions
+# ==================================================================================================================== #
+
+def dewpoint(T, RH):
+    """
+    Calculates dewpoint from T in Fahrenheit and RH in percent.
+    """
+
+    def FtoC(T):
+        return (T - 32.) / 9. * 5.
+
+    def CtoF(T):
+        return 9. / 5. * T + 32.
+
+    b = 17.67
+    c = 243.5  # deg C
+
+    def gamma(T, RH):
+        return np.log(RH/100.) + b * T/ (c + T)
+
+    T = FtoC(T)
+    TD = c * gamma(T, RH) / (b - gamma(T, RH))
+    return CtoF(TD)

@@ -63,13 +63,23 @@ Version history
     -- added learning curves in performance metrics; more to come
 2018-03-27: Version 0.8.1
     -- fixed an error in util.generate_dates that failed to produce all the dates when is_season is False
+2018-04-06: Version 0.9.0
+    -- better implementation of base estimator attributes in TimeSeriesEstimator and RainTuningEstimator classes
+    -- added submodule 'predict' for unified predictions
+    -- improved handling of the raw precipitation values to allow them to be used in rain tuning
+    -- added config option for the starting hour of a forecast day
+    -- added config option to predict probability of precipitation rather than quantity
+    -- added option for 1-hour or 3-hour timeseries predictions
+    -- added automatic fetching of CF6 files
+    -- added automatic retrieval of climo_station_id (removed from default.config)
 
 """
 
 import bufr
 import obs
-import verification
+import predict
 import train
 import util
+import verification
 
-__version__ = '0.8.1'
+__version__ = '0.9.0'

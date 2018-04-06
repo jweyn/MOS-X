@@ -31,6 +31,8 @@ def get_command_options():
                       help='Starting verification date, YYYYMMDD (default=today)')
     parser.add_option('-e', '--end-date', dest='endstr', action='store', type='string', default='today',
                       help='Ending verification date, YYYYMMDD (default=weekago)')
+    parser.add_option('-t', '--tune-rain', dest='tune_rain', action='store_true', default=False,
+                      help='Apply manual rainfall tuning')
     parser.add_option('-m', '--verify-mos', dest='mos_flag', action='store_true', default=False,
                       help="Also retrieve GFS and NAM MOS forecasts for comparison")
     parser.add_option('-N', '--no-verify', dest='no_verif_flag', action='store_true', default=False,
@@ -75,6 +77,7 @@ def retrieve_mos(model, init_date, forecast_date):
 
     :param model: model name (GFS or NAM)
     :param init_date: datetime of model initialization
+    :param forecast_date: datetime of forecast
     :return: dict of high, low, max wind, total rain for next 6Z--6Z
     """
 
@@ -196,6 +199,8 @@ if not options.no_verif_flag:
         print('If issues occur, delete this file and try again')
     else:
         mosx.verification.verification(config, verif_file, use_climo=False)
+    with open(verif_file, 'rb') as handle:
+        verif = pickle.load(handle)
 else:
     verif_file = None
 
@@ -205,41 +210,14 @@ else:
 predictor_file = '%s/%s_verify_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'],
                                               new_end_date)
 print('\n--- MOS-X run: formatting predictor data...\n')
-all_dates, precip = mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file,
-                                                 return_dates=True, return_precip_forecast=True)
+all_dates = mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file,
+                                         return_dates=True)
 
 
-# Load the input data, verif data, and the estimator
+# Make a prediction!
 
-print('\n--- MOS-X run: calculating forecasts...\n')
-with open(predictor_file, 'rb') as handle:
-    data = pickle.load(handle)
-if not options.no_verif_flag:
-    with open(verif_file, 'rb') as handle:
-        verif = pickle.load(handle)
-with open(config['Model']['estimator_file'], 'rb') as handle:
-    estimator = pickle.load(handle)
-
-predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)
-predicted = estimator.predict(predictors)
-
-# Check for precipitation override
-for day in range(len(all_dates)):
-    print('Day: %s' % all_dates[day])
-    print('  Raw forecast precipitation values:')
-    print(precip[day])
-    if sum(precip[day]) < 0.01:
-        print('  Warning: overriding MOS-X prediction of %0.2f for rain with 0' % 
-              predicted[day, 3])
-        predicted[day, 3] = 0.
-    elif predicted[day, 3] > max(precip[day]) or predicted[day, 3] < min(precip[day]):
-        print('Warning: MOS-X prediction for rainfall out of model range; ' + 
-              'overriding MOS-X prediction of %0.2f with model mean' % predicted[day, 3])
-        predicted[day, 3] = max(0., np.mean(precip[day] + [predicted[day, 3]]))
-
-# Round off daily values
-predicted[:, :3] = np.round(predicted[:, :3])
-predicted[:, 3] = np.round(predicted[:, 3], 2)
+predicted, all_predicted, predicted_timeseries = mosx.predict.predict(config, predictor_file,
+                                                                      tune_rain=options.tune_rain)
 
 
 # Get GFS and NAM MOS forecasts, if desired
