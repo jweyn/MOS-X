@@ -32,6 +32,8 @@ class PredictorDict(dict):
         :param rain_array:
         :return:
         """
+        rain_array[np.isnan(rain_array)] = 0.
+
         if 'BUFKIT' in self.keys():
             if isinstance(self['BUFKIT'], np.ndarray):
                 if self['BUFKIT'].shape[0] != rain_array.shape[0]:

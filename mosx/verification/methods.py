@@ -18,7 +18,7 @@ import requests
 from collections import OrderedDict
 from mosx.MesoPy import Meso
 from mosx.obs.methods import get_obs_hourly
-from mosx.util import generate_dates, get_array
+from mosx.util import generate_dates, get_array, get_ghcn_stid
 
 
 def get_cf6_files(config, num_files=1):
@@ -177,10 +177,7 @@ def _climo_wind(config, dates=None):
         print('_climo_wind: fetching data from NCDC (may take a while)...')
     v = 'WSF2'
     wind_dict = {}
-    try:
-        D = ulmo.ncdc.ghcn_daily.get_data(config['climo_station_id'], as_dataframe=True, elements=[v])
-    except:
-        return wind_dict
+    D = ulmo.ncdc.ghcn_daily.get_data(get_ghcn_stid(config), as_dataframe=True, elements=[v])
 
     if dates is None:
         dates = list(D[v].index.to_timestamp().to_pydatetime())
@@ -390,6 +387,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
     if use_climo:
         try:
             climo_values = _climo_wind(config, dates)
+            print(climo_values)
         except BaseException as e:
             if config['verbose']:
                 print("verification: warning: '%s' while reading climo data" % str(e))
@@ -399,8 +397,9 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
             print('verification: not using climo.')
         climo_values = {}
     if use_cf6:
+        num_months = min((datetime.utcnow() - dates[0]).days / 30, 24)
         try:
-            get_cf6_files(config)
+            get_cf6_files(config, num_months)
         except BaseException as e:
             if config['verbose']:
                 print("verification: warning: '%s' while getting CF6 files" % str(e))

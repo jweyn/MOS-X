@@ -480,7 +480,7 @@ def unpickle(bufr_file, obs_file, verif_file):
     return bufr, obs, verif
 
 
-def get_ghcn_stid(config, stid):
+def get_ghcn_stid(config):
     """
     After code by Luke Madaus.
 
@@ -489,6 +489,7 @@ def get_ghcn_stid(config, stid):
     main_addr = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa'
 
     site_directory = config['SITE_ROOT']
+    stid = config['station_id']
     # Check to see that ish-history.txt exists
     stations_file = 'isd-history.txt'
     stations_filename = '%s/%s' % (site_directory, stations_file)

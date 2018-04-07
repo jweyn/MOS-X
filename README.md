@@ -30,8 +30,8 @@ Nothing to do really. Just make sure the scripts in the main directory (`build`,
 ## Building a model
 
 1. The first thing to do is to set up the config file for the particular site to forecast for. The `default.config` file has a good number of comments to describe how to do that. Parameters that are not marked 'optional' or with a default value must be specified.
-  - One "optional" parameter that may cause some trouble is `climo_station_id`. This is a long station ID that is used in the NCDC climate databases. To find the station ID for a particular site, see the file at ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-history.txt (yes I know this is complicated, and an automated procedure is on the TODO list)
-  - It is also not recommended to use the upper-air sounding data option. In my testing adding sounding data actually made no difference to the skill of the models, but YMMV. Use with caution. I don't test it.
+  - The parameter `climo_station_id` is now automatically generated!
+  - It is not recommended to use the upper-air sounding data option. In my testing adding sounding data actually made no difference to the skill of the models, but YMMV. Use with caution. I don't test it.
 2. Once the config is set up, build the model using `build <config>`. The config reader will automatically look for `<config>.config` too, so if you're like me and like to call your config files `KSEA.config`, it's handy to just pass `KSEA`.
   - Depending on how much training data is requested, it may take several hours for BUFRgruven to download everything.
   - Actually building the scikit-learn model, however, takes only 10 minutes for a 1000-tree random forest on a 16-core machine.
@@ -46,3 +46,4 @@ Nothing to do really. Just make sure the scripts in the main directory (`build`,
 
 - There is built-in functionality for building a model that predicts a time series of hourly temperature, relative humidity, wind speed, and rain for the forecast period in addition to the daily values. While handy to get an idea of the temporal variation of predicted weather, it actually has limited use, and makes the pickled model file much larger.
 - Rain forecasting is difficult for an ML model. Rain values are highly non-normally distributed. There is the option to use a post-processor model, which is another random forest, trained on the distribution of output from the base model's trees. It improves rain forecast a little, particularly by doing a better job of predicting 0 on sunny days.
+- Rain forecasting can now be done in three different ways: `quantity`, which is the standard prediction of an actual daily rain total, `pop`, or the probability of precipitation, and `categorical`, which uses the MOS categories.

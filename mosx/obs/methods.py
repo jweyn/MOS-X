@@ -267,7 +267,7 @@ def process(config, obs):
     :return:
     """
     if config['verbose']:
-        print('ons.process: processing array for obs data...')
+        print('obs.process: processing array for obs data...')
 
     # Surface observations
     sfc = obs['SFC']
