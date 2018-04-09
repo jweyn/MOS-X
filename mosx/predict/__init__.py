@@ -11,6 +11,7 @@ Methods for predicting from scikit-learn models.
 import pickle
 import numpy as np
 import pandas as pd
+from datetime import datetime, timedelta
 from ..util import dewpoint, to_bool
 
 
@@ -92,11 +93,17 @@ def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_
     else:
         all_predicted = None
 
-    if config['Model']['predict_timeseries'] and time_series_date is not None:
-        predicted_array = predicted[-1, 4:].reshape((4, 25)).T
+    if config['Model']['predict_timeseries']:
+        if time_series_date is None:
+            date_now = datetime.utcnow()
+            time_series_date = datetime(date_now.year, date_now.month, date_now.day) + timedelta(days=1)
+            print('predict: warning: set time series start date to %s (was unspecified)' % time_series_date)
+        num_hours = int(24 / config['time_series_interval']) + 1
+        predicted_array = predicted[-1, 4:].reshape((4, num_hours)).T
         # Get dewpoint
         predicted_array[:, 2] = dewpoint(predicted_array[:, 0], predicted_array[:, 2])
-        times = pd.date_range(time_series_date.replace(hour=6), periods=25, freq='H').to_pydatetime().tolist()
+        times = pd.date_range(time_series_date.replace(hour=6), periods=num_hours,
+                              freq='%dH' % config['time_series_interval']).to_pydatetime().tolist()
         variables = ['temperature', 'rain', 'dewpoint', 'windSpeed']
         round_dict = {'temperature': 0, 'rain': 2, 'dewpoint': 0, 'windSpeed': 0}
         predicted_timeseries = pd.DataFrame(predicted_array, index=times, columns=variables)

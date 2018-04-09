@@ -17,7 +17,7 @@ import pickle
 import requests
 from collections import OrderedDict
 from mosx.MesoPy import Meso
-from mosx.obs.methods import get_obs_hourly
+from mosx.obs.methods import get_obs_hourly, reindex_hourly
 from mosx.util import generate_dates, get_array, get_ghcn_stid
 
 
@@ -245,24 +245,6 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
     dates = generate_dates(config)
     api_dates = generate_dates(config, api=True, api_add_hour=config['forecast_hour_start'] + 24)
 
-    # If a time series is desired, then get hourly data
-    if config['Model']['predict_timeseries']:
-
-        # Look for desired variables
-        vars_request = ['air_temp', 'relative_humidity', 'wind_speed', 'precip_accum_one_hour']
-
-        # Add variables to the api request
-        vars_api = ''
-        for var in vars_request:
-            vars_api += var + ','
-        vars_api = vars_api[:-1]
-
-        # Units
-        units = 'temp|f,precip|in,speed|kts'
-
-        # Retrieve data
-        obs_hourly_verify = get_obs_hourly(config, api_dates, vars_api, units)
-
     # Read new data for daily values
     m = Meso(token=config['meso_token'])
 
@@ -469,11 +451,9 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
     elif config['Model']['rain_forecast_type'] == 'categorical' and not force_rain_quantity:
         obs_daily.loc[:, 'Rain'] = categorical_rain(obs_daily['Rain'])
 
-    # Set the date time index
+    # Set the date time index and retain only desired columns
     obs_daily = obs_daily.rename(columns={datename: 'date_time'})
     obs_daily = obs_daily.set_index('date_time')
-
-    # Export final data
     if config['verbose']:
         print('verification: -> exporting to %s' % output_file)
     export_cols = ['Tmax', 'Tmin', 'Wind', 'Rain']
@@ -481,6 +461,34 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
         if col not in export_cols:
             obs_daily.drop(col, 1, inplace=True)
 
+    # If a time series is desired, then get hourly data
+    if config['Model']['predict_timeseries']:
+
+        # Look for desired variables
+        vars_request = ['air_temp', 'relative_humidity', 'wind_speed', 'precip_accum_one_hour']
+
+        # Add variables to the api request
+        vars_api = ''
+        for var in vars_request:
+            vars_api += var + ','
+        vars_api = vars_api[:-1]
+
+        # Units
+        units = 'temp|f,precip|in,speed|kts'
+
+        # Retrieve data
+        obs_hourly_verify = get_obs_hourly(config, api_dates, vars_api, units)
+        if config['Model']['rain_forecast_type'] == 'pop' and not force_rain_quantity:
+            obs_hourly_verify.loc[:, 'precip_accum_one_hour'] = pop_rain(obs_hourly_verify['precip_accum_one_hour'])
+            use_rain_max = True
+        elif config['Model']['rain_forecast_type'] == 'categorical' and not force_rain_quantity:
+            obs_hourly_verify.loc[:, 'precip_accum_one_hour'] = categorical_rain(
+                obs_hourly_verify['precip_accum_one_hour'])
+            use_rain_max = True
+        else:
+            use_rain_max = False
+
+    # Export final data
     export_dict = OrderedDict()
     for date in dates:
         try:
@@ -492,10 +500,11 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
                 print('verification: warning: omitting day %s; missing data' % date)
             continue  # No verification can have missing values
         if config['Model']['predict_timeseries']:
-            start = pd.Timestamp((date + timedelta(hours=5)))
-            end = pd.Timestamp((date + timedelta(hours=30)))
+            start = pd.Timestamp((date + timedelta(hours=config['forecast_hour_start'] - 1)))
+            end = pd.Timestamp((date + timedelta(hours=config['forecast_hour_start'] + 24)))
             try:
-                series = obs_hourly_verify.loc[start:end]
+                series = reindex_hourly(obs_hourly_verify, start, end, config['time_series_interval'],
+                                        use_rain_max=use_rain_max)
             except KeyError:
                 # No values for the day
                 if config['verbose']:
@@ -539,10 +548,8 @@ def process(config, verif):
             for date in hour_verif.keys():
                 for variable in variables:
                     hour_verif[date].pop(variable, None)
-            variables = sorted(hour_verif[hour_verif.keys()[0]].keys())
-            num_vars = len(variables)
             hour_verif_array = get_array(hour_verif)
-            hour_verif_array = np.reshape(hour_verif_array, (num_days, num_vars * 25))
+            hour_verif_array = np.reshape(hour_verif_array, (num_days, -1))
             verif_array = np.concatenate((day_verif_array, hour_verif_array), axis=1)
             return verif_array
         else:

@@ -164,6 +164,9 @@ def get_obs_hourly(config, api_dates, vars_api, units):
         # Need to reorder the column names
         obs_hourly.sort_index(axis=1, inplace=True)
 
+        # Remove any duplicate rows
+        obs_hourly = obs_hourly[~obs_hourly.index.duplicated(keep='last')]
+
         # Re-index by hourly. Fills missing with NaNs. Try to interpolate the NaNs.
         expected_start = datetime.strptime(api_date[0], '%Y%m%d%H%M').replace(minute=minute_mode)
         expected_end = datetime.strptime(api_date[1], '%Y%m%d%H%M').replace(minute=minute_mode)
@@ -173,10 +176,43 @@ def get_obs_hourly(config, api_dates, vars_api, units):
 
         obs_final = pd.concat((obs_final, obs_hourly))
 
-    # Remove any duplicate rows
+    # Remove any duplicate rows from concatenation
     obs_final = obs_final[~obs_final.index.duplicated(keep='last')]
 
     return obs_final
+
+
+def reindex_hourly(df, start, end, interval, end_23z=False, use_rain_max=False):
+
+    def last(values):
+        return values.iloc[-1]
+
+    if end_23z:
+        new_end = pd.Timestamp(end.to_pydatetime() - timedelta(hours=1))
+    else:
+        new_end = end
+    period = pd.date_range(start, end, freq='%dH' % interval)
+    # Create a column with the new index an ob falls into
+    df['period'] = (df.index.values > period.values[..., np.newaxis]).sum(0)
+    df['DateTime'] = df.index.values
+    aggregate = OrderedDict()
+    col_names = df.columns.values
+    for col in col_names:
+        if not(col.lower().startswith('precip')) and not(col.lower().startswith('rain')):
+            aggregate[col] = last
+        else:
+            if use_rain_max:
+                aggregate[col] = np.max
+            else:
+                aggregate[col] = np.sum
+    df_reindex = df.loc[start:new_end].groupby('period').agg(aggregate)
+    try:
+        df_reindex = df_reindex.drop('period', axis=1)
+    except (ValueError, KeyError):
+        pass
+    df_reindex = df_reindex.set_index('DateTime')
+
+    return df_reindex
 
 
 def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=False, use_existing_sounding=True):
@@ -242,9 +278,10 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
         if config['Obs']['use_soundings'] and date not in soundings.keys():
             continue
         # Need to ensure we use the right intervals to have 22:5? Z obs
-        start = pd.Timestamp((date - timedelta(hours=num_hours - interval + 2)))
-        end = pd.Timestamp((date - timedelta(hours=1)))
-        obs_export['SFC'][date] = OrderedDict(obs_hourly.loc[start:end:interval].to_dict(into=OrderedDict))
+        start = pd.Timestamp((date - timedelta(hours=num_hours)))
+        end = pd.Timestamp(date)
+        obs_export['SFC'][date] = reindex_hourly(obs_hourly, start, end, interval,
+                                                 end_23z=True).to_dict(into=OrderedDict)
         if config['Obs']['use_soundings']:
             obs_export['SNDG'][date] = soundings[date]
 
@@ -273,17 +310,14 @@ def process(config, obs):
     sfc = obs['SFC']
     num_days = len(sfc.keys())
     variables = sorted(sfc[sfc.keys()[0]].keys())
-    num_vars = len(variables)
-    num_times = len(sfc[sfc.keys()[0]][variables[0]])
     sfc_array = get_array(sfc)
-    sfc_array_r = np.reshape(sfc_array, (num_days, num_vars * num_times))
+    sfc_array_r = np.reshape(sfc_array, (num_days, -1))
 
     # Sounding observations
     if config['Obs']['use_soundings']:
         sndg_array = get_array(obs['SNDG'])
         # num_days should be the same first dimension
-        sndg_shape = (num_days, sndg_array.size / num_days)
-        sndg_array_r = np.reshape(sndg_array, sndg_shape)
+        sndg_array_r = np.reshape(sndg_array, (num_days, -1))
         return np.hstack((sfc_array_r, sndg_array_r))
     else:
         return sfc_array_r

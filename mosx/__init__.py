@@ -71,6 +71,7 @@ Version history
     -- added config option to predict probability of precipitation rather than quantity
     -- added automatic fetching of CF6 files
     -- added automatic retrieval of climo_station_id (removed from default.config)
+    -- added time_series_interval parameter to output coarser time series
 
 """
 
