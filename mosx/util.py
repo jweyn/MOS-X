@@ -38,10 +38,10 @@ class TimeSeriesEstimator(object):
                 pass
         # Apparently still have to do this
         self.named_steps = self.daily_estimator.named_steps
-        try:
+        try:  # Likely only works if model has been fitted
             self.estimators_ = self.daily_estimator.estimators_
         except AttributeError:
-            pass
+            self.estimators_ = None
         self.array_form = True
         if not hasattr(self, 'verbose'):
             self.verbose = 1
@@ -85,28 +85,31 @@ class RainTuningEstimator(object):
         """
         Initialize an instance of an estimator with a rainfall post-processor.
 
-        :param estimator: sklearn estimator or TimeSeriesEstimator with an _estimators attribute
+        :param estimator: sklearn estimator or TimeSeriesEstimator with an estimators_ attribute
         :param kwargs: passed to scikit-learn random forest rain processing algorithm
         """
         self.base_estimator = estimator
+        if isinstance(estimator, TimeSeriesEstimator):
+            self.daily_estimator = self.base_estimator.daily_estimator
+        else:
+            self.daily_estimator = self.base_estimator
         # Inherit attributes from the base estimator
         for attr in self.base_estimator.__dict__.keys():
             try:
                 setattr(self, attr, getattr(self.base_estimator, attr))
             except AttributeError:
                 pass
-        self.named_steps = self.base_estimator.named_steps
         try:
             self.estimators_ = self.base_estimator.estimators_
         except AttributeError:
             pass
         self.rain_processor = RandomForestRegressor(**kwargs)
-        if isinstance(self.base_estimator, Pipeline):
-            self._forest = self.base_estimator.named_steps['regressor']
-            self._imputer = self.base_estimator.named_steps['imputer']
+        if isinstance(self.daily_estimator, Pipeline):
+            self._forest = self.daily_estimator.named_steps['regressor']
+            self._imputer = self.daily_estimator.named_steps['imputer']
         else:
             self._imputer = None
-            self._forest = self.base_estimator
+            self._forest = self.daily_estimator
         if not hasattr(self, 'verbose'):
             self.verbose = 1
 

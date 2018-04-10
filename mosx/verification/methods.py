@@ -369,7 +369,6 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
     if use_climo:
         try:
             climo_values = _climo_wind(config, dates)
-            print(climo_values)
         except BaseException as e:
             if config['verbose']:
                 print("verification: warning: '%s' while reading climo data" % str(e))
@@ -478,12 +477,16 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
 
         # Retrieve data
         obs_hourly_verify = get_obs_hourly(config, api_dates, vars_api, units)
+
+        # Fix rainfall for categorical and time accumulation
+        rain_column = 'precip_last_%d_hour' % config['time_series_interval']
+        obs_hourly_verify.rename(columns={'precip_accum_one_hour': rain_column}, inplace=True)
         if config['Model']['rain_forecast_type'] == 'pop' and not force_rain_quantity:
-            obs_hourly_verify.loc[:, 'precip_accum_one_hour'] = pop_rain(obs_hourly_verify['precip_accum_one_hour'])
+            obs_hourly_verify.loc[:, rain_column] = pop_rain(obs_hourly_verify[rain_column])
             use_rain_max = True
         elif config['Model']['rain_forecast_type'] == 'categorical' and not force_rain_quantity:
-            obs_hourly_verify.loc[:, 'precip_accum_one_hour'] = categorical_rain(
-                obs_hourly_verify['precip_accum_one_hour'])
+            obs_hourly_verify.loc[:, rain_column] = categorical_rain(
+                obs_hourly_verify[rain_column])
             use_rain_max = True
         else:
             use_rain_max = False
@@ -500,8 +503,9 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
                 print('verification: warning: omitting day %s; missing data' % date)
             continue  # No verification can have missing values
         if config['Model']['predict_timeseries']:
-            start = pd.Timestamp((date + timedelta(hours=config['forecast_hour_start'] - 1)))
-            end = pd.Timestamp((date + timedelta(hours=config['forecast_hour_start'] + 24)))
+            start = pd.Timestamp(date + timedelta(hours=(config['forecast_hour_start'] -
+                                                         config['time_series_interval'])))
+            end = pd.Timestamp(date + timedelta(hours=config['forecast_hour_start'] + 24))
             try:
                 series = reindex_hourly(obs_hourly_verify, start, end, config['time_series_interval'],
                                         use_rain_max=use_rain_max)
