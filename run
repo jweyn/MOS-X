@@ -203,11 +203,17 @@ if prob:
                   (0.8, 0.7, 0.1)]
         titles = ['High temperature', 'Low temperature', 'Max 2-min wind', 'Precipitation']
         for plot_num in range(4):
-            if plot_num != 3 or (plot_num == 3 and config['Model']['rain_forecast_type'] != 'quantity'):
+            if plot_num != 3:
                 unit = 1.
                 decimals = 1
-            else:
-                unit = 0.01
+            elif config['Model']['rain_forecast_type'] == 'pop':
+                unit = 0.1
+                decimals = 2
+            elif config['Model']['rain_forecast_type'] == 'categorical':
+                unit = 1.
+                decimals = 1
+            elif config['Model']['rain_forecast_type'] == 'quantity':
+                unit = 0.05
                 decimals = 3
             plot_histogram(gs1[plot_num], predicted[:, plot_num], unit, facecolor=colors[plot_num],
                            decimals=decimals, title=titles[plot_num])
