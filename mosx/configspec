@@ -20,6 +20,7 @@ verbose = boolean(default=False)
     use_soundings = boolean(default=False)
     sounding_station_id = string(min=3, max=3)
     sounding_data_dir = string(default='')
+    use_climo_wind = boolean(default=True)
 [Model]
     estimator_file = string()
     regressor = string(default='ensemble.RandomForestRegressor')

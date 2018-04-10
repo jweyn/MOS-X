@@ -64,7 +64,10 @@ if not use_existing:
         p2.join()
 
     print('\n--- MOS-X build: retrieving VERIF data...\n')
-    mosx.verification.verification(config, verif_file)
+    if config['Obs']['use_climo_wind']:
+        mosx.verification.verification(config, verif_file)
+    else:
+        mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=False)
 
 # Re-format predictors even if using existing raw data
 print('\n--- MOS-X build: formatting predictor and target data...\n')

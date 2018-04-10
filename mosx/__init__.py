@@ -63,7 +63,7 @@ Version history
     -- added learning curves in performance metrics; more to come
 2018-03-27: Version 0.8.1
     -- fixed an error in util.generate_dates that failed to produce all the dates when is_season is False
-2018-04-06: Version 0.9.0
+2018-04-10: Version 0.9.0
     -- better implementation of base estimator attributes in TimeSeriesEstimator and RainTuningEstimator classes
     -- added submodule 'predict' for unified predictions
     -- improved handling of the raw precipitation values to allow them to be used in rain tuning
@@ -72,6 +72,7 @@ Version history
     -- added automatic fetching of CF6 files
     -- added automatic retrieval of climo_station_id (removed from default.config)
     -- added time_series_interval parameter to output coarser time series
+    -- added option to disable climo/cf6 wind retrieval, for non-WxChallenge purposes
 
 """
 
