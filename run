@@ -94,7 +94,8 @@ mosx.train.format_predictors(config, bufr_file, obs_file, None, predictor_file)
 # Make a prediction!
 
 predicted, all_predicted, predicted_timeseries = mosx.predict.predict(config, predictor_file, ensemble=prob,
-                                                                      time_series_date=verif_date, tune_rain=True)
+                                                                      time_series_date=verif_date,
+                                                                      tune_rain=options.tune_rain)
 predicted = np.squeeze(predicted)
 
 
