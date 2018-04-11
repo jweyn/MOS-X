@@ -32,7 +32,7 @@ verbose = boolean(default=False)
     start_date = string(min=8, max=8)
     end_date = string(min=8, max=8)
 [Upload]
-    file_type = option('pickle', default='pickle')
+    file_type = option('pickle', 'uw_text', default='pickle')
     username = string(default='')
     server = string(default='')
     forecast_directory = string(default='~')

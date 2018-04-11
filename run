@@ -13,6 +13,7 @@ import os
 import sys
 import mosx
 import numpy as np
+from shutil import copy2
 from collections import OrderedDict
 from optparse import OptionParser
 from datetime import datetime, timedelta
@@ -125,29 +126,41 @@ if config['Model']['predict_timeseries']:
 # Write the forecast, if requested
 
 if write_flag:
-    if write_file == 'default':
-        write_file = '%s/%s_MOSX_fcst.pkl' % (config['SITE_ROOT'], config['station_id'])
-    print('\nForecast write requested, writing to file %s' % write_file)
-    # Check if pickle file already exists
-    try:
-        with open(write_file, 'rb') as handle:
-            data = pickle.load(handle)
-    except:
-        data = OrderedDict()
-    
-    data[verif_date] = {
-                        'high': np.round(predicted[0]),
-                        'low': np.round(predicted[1]),
-                        'wind': np.round(predicted[2]),
-                        'precip': np.round(predicted[3], 2)
-                       }
+    if config['Upload']['file_type'] == 'pickle':
+        if write_file == 'default':
+            write_file = '%s/%s_MOSX_fcst.pkl' % (config['SITE_ROOT'], config['station_id'])
+        print('\nForecast write requested, writing to file %s' % write_file)
+        # Check if pickle file already exists
+        try:
+            with open(write_file, 'rb') as handle:
+                data = pickle.load(handle)
+        except:
+            data = OrderedDict()
 
-    if config['Model']['predict_timeseries']:
-        data[verif_date].update(predicted_timeseries.to_dict(into=OrderedDict))
+        data[verif_date] = {
+                            'high': np.round(predicted[0]),
+                            'low': np.round(predicted[1]),
+                            'wind': np.round(predicted[2]),
+                            'precip': np.round(predicted[3], 2)
+                           }
 
-    with open(write_file, 'wb') as handle:
-        pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    
+        if config['Model']['predict_timeseries']:
+            data[verif_date].update(predicted_timeseries.to_dict(into=OrderedDict))
+
+        with open(write_file, 'wb') as handle:
+            pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    elif config['Upload']['file_type'] == 'uw_text':
+        write_file = 'MOS-X.%s' % new_end_date
+        print('\nForecast write requested, writing to file %s' % write_file)
+        if config['Model']['rain_forecast_type'] != 'pop':
+            print('Warning: model rain prediction is not probability! Expect unusual output!')
+        high = np.round(predicted[0])
+        rain = 10. * np.round(predicted[3])
+        line = 'MOS-X,%0.0f,%0.0f' % (high, rain)
+        with open(write_file, 'w') as f:
+            f.write(line)
+
 
 # Make plots of probability distributions
 
@@ -231,10 +244,21 @@ if upload and write_flag:
     print('\nUpload requested...')
     account = config['Upload']['username']
     server = config['Upload']['server']
-    if account == '' or server == '':
+    forecast_dir = config['Upload']['forecast_directory']
+    plot_dir = config['Upload']['plot_directory']
+    if account == '' and server == '':
+        if forecast_dir != '':
+            copy2(write_file, '%s/%s' % (forecast_dir, write_file.split('/')[-1]))
+        else:
+            print('No local directory specified for forecast upload, aborting')
+        if prob and plot_dir != '':
+            copy2(prob_file, '%s/%s' % (plot_dir, prob_file.split('/')[-1]))
+        else:
+            print('No local directory specified for plot upload, aborting')
+    elif account == '' or server == '':
         print('Invalid username and/or server in config file, aborting')
     else:
-        result = os.system('scp %s %s@%s:%s' % (write_file, account, server, config['Upload']['forecast_directory']))
+        result = os.system('scp %s %s@%s:%s' % (write_file, account, server, forecast_dir))
         if prob:
-            os.system('scp %s %s@%s:%s' % (prob_file, account, server, config['Upload']['plot_directory']))
-        print('  Upload finished with system exit status %s' % result)
+            os.system('scp %s %s@%s:%s' % (prob_file, account, server, plot_dir))
+        print('Upload finished with system exit status %s' % result)

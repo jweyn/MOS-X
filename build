@@ -83,6 +83,8 @@ p_test, t_test, r_test = mosx.train.train(config, predictor_file, config['Model'
 
 # Test the predictor
 
+print('\n--- MOS-X build: predicting for a test of 1 day...\n')
+
 print('Loading estimator file %s' % config['Model']['estimator_file'])
 with open(config['Model']['estimator_file'], 'rb') as handle:
     estimator = pickle.load(handle)
@@ -97,7 +99,7 @@ else:
 
 num_test = t_test.shape[0]
 for t in range(num_test):
-    print('\nSanity check:\nFor day %d, the predicted forecast is' % t)
+    print('\nFor day %d, the predicted forecast is' % t)
     print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[t, :4]))
     print('  while the verification was')
     print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(expected[t, :4]))

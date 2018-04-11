@@ -37,7 +37,10 @@ class TimeSeriesEstimator(object):
             except AttributeError:
                 pass
         # Apparently still have to do this
-        self.named_steps = self.daily_estimator.named_steps
+        if isinstance(self.daily_estimator, Pipeline):
+            self.named_steps = self.daily_estimator.named_steps
+        else:
+            self.named_steps = None
         try:  # Likely only works if model has been fitted
             self.estimators_ = self.daily_estimator.estimators_
         except AttributeError:
@@ -105,9 +108,11 @@ class RainTuningEstimator(object):
             pass
         self.rain_processor = RandomForestRegressor(**kwargs)
         if isinstance(self.daily_estimator, Pipeline):
+            self.named_steps = self.daily_estimator.named_steps
             self._forest = self.daily_estimator.named_steps['regressor']
             self._imputer = self.daily_estimator.named_steps['imputer']
         else:
+            self.named_steps = None
             self._imputer = None
             self._forest = self.daily_estimator
         if not hasattr(self, 'verbose'):
