@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from ..util import dewpoint, to_bool
 
 
-def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_rain=False):
+def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_rain=False, round=False):
     """
     Predict forecasts from the estimator in config.
 
@@ -25,6 +25,7 @@ def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_
     :param time_series_date: datetime: if set, returns a time series prediction from the estimator, where the datetime
     provided is the day the forecast is for (only works for single-day runs, or assumes last day)
     :param tune_rain: bool: if True, applies manual tuning to the rain forecast
+    :param round: bool: if True, rounds the predicted estimate
     :return:
     """
     # Load the predictor data and estimator
@@ -60,9 +61,10 @@ def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_
         # At least make sure we aren't predicting negative values...
         predicted[:, 3][predicted[:, 3] < 0] = 0.0
 
-    # Round off daily values
-    predicted[:, :3] = np.round(predicted[:, :3])
-    predicted[:, 3] = np.round(predicted[:, 3], 2)
+    # Round off daily values, if selected
+    if round:
+        predicted[:, :3] = np.round(predicted[:, :3])
+        predicted[:, 3] = np.round(predicted[:, 3], 2)
 
     # If probabilities are requested and available, get the results from each tree
     if not (config['Model']['regressor'].startswith('ensemble')):
