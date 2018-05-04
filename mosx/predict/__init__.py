@@ -38,10 +38,14 @@ def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_
         estimator = pickle.load(handle)
 
     predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
-    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
-        predicted = estimator.predict(predictors, rain_array=predictor_data.rain)
+    if config['Model']['rain_forecast_type'] == 'pop' and getattr(estimator, 'is_classifier', False):
+        predict_method = estimator.predict_proba
     else:
-        predicted = estimator.predict(predictors)
+        predict_method = estimator.predict
+    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+        predicted = predict_method(predictors, rain_array=predictor_data.rain)
+    else:
+        predicted = predict_method(predictors)
     precip = predictor_data.rain
 
     # Check for precipitation override
@@ -70,10 +74,14 @@ def predict(config, predictor_file, ensemble=False, time_series_date=None, tune_
     if not (config['Model']['regressor'].startswith('ensemble')):
         ensemble = False
     if ensemble:
-        imputer = estimator.named_steps['imputer']
-        forest = estimator.named_steps['regressor']
-        predictors = imputer.transform(predictors)
-        if config['Model']['train_individual']:
+        if not hasattr(estimator, 'named_steps'):
+            forest = estimator
+        else:
+            imputer = estimator.named_steps['imputer']
+            forest = estimator.named_steps['regressor']
+            predictors = imputer.transform(predictors)
+        # If we generated our own ensemble by bootstrapping, it must be treated as such
+        if config['Model']['train_individual'] and config['Model'].get('Bootstrapping', None) is None:
             num_trees = len(forest.estimators_[0].estimators_)
             all_predicted = np.zeros((num_trees, 4))
             for v in range(4):

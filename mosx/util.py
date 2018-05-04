@@ -13,200 +13,11 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import pickle
-from sklearn.multioutput import MultiOutputRegressor
-from sklearn.pipeline import Pipeline
-from sklearn.ensemble import RandomForestRegressor
 
 
 # ==================================================================================================================== #
 # Classes
 # ==================================================================================================================== #
-
-class TimeSeriesEstimator(object):
-    """
-    Wrapper class for containing separately-trained daily and timeseries estimators.
-    """
-    def __init__(self, daily_estimator, timeseries_estimator):
-        self.daily_estimator = daily_estimator
-        self.timeseries_estimator = timeseries_estimator
-        # Inherit attributes from the daily estimator by default.
-        # Apparently only 'steps' and 'memory' are in __dict__ for a Pipeline. BS.
-        for attr in self.daily_estimator.__dict__.keys():
-            try:
-                setattr(self, attr, getattr(self.daily_estimator, attr))
-            except AttributeError:
-                pass
-        # Apparently still have to do this
-        if isinstance(self.daily_estimator, Pipeline):
-            self.named_steps = self.daily_estimator.named_steps
-        else:
-            self.named_steps = None
-        try:  # Likely only works if model has been fitted
-            self.estimators_ = self.daily_estimator.estimators_
-        except AttributeError:
-            self.estimators_ = None
-        self.array_form = True
-        if not hasattr(self, 'verbose'):
-            self.verbose = 1
-
-    def fit(self, predictor_array, verification_array, **kwargs):
-        """
-        Fit both the daily and the timeseries estimators.
-        :param predictor_array: num_samples x num_features
-        :param verification_array: num_samples x num_daily+num_ts
-        :param kwargs: kwargs passed to fit methods
-        :return:
-        """
-        if self.verbose > 0:
-            print('TimeSeriesEstimator: fitting DAILY estimator')
-        self.daily_estimator.fit(predictor_array, verification_array[:, :4], **kwargs)
-        if self.verbose > 0:
-            print('TimeSeriesEstimator: fitting TIMESERIES estimator')
-        self.timeseries_estimator.fit(predictor_array, verification_array[:, 4:], **kwargs)
-
-    def predict(self, predictor_array, **kwargs):
-        """
-        Predict from both the daily and timeseries estimators. Returns an array if self.array_form is True,
-        otherwise returns a dictionary (not implemented yet).
-        :param predictor_array: num_samples x num_features
-        :param kwargs: kwargs passed to predict methods
-        :return: array or dictionary of predicted values
-        """
-        daily = self.daily_estimator.predict(predictor_array, **kwargs)
-        timeseries = self.timeseries_estimator.predict(predictor_array, **kwargs)
-        if self.array_form:
-            return np.concatenate((daily, timeseries), axis=1)
-
-
-class RainTuningEstimator(object):
-    """
-    This class extends an estimator to include a separately-trained post-processing random forest for the daily rainfall
-    prediction. Standard algorithms generally do a poor job of predicting a variable that has such a non-normal
-    probability distribution as daily rainfall (which is dominated by 0s).
-    """
-    def __init__(self, estimator, **kwargs):
-        """
-        Initialize an instance of an estimator with a rainfall post-processor.
-
-        :param estimator: sklearn estimator or TimeSeriesEstimator with an estimators_ attribute
-        :param kwargs: passed to scikit-learn random forest rain processing algorithm
-        """
-        self.base_estimator = estimator
-        if isinstance(estimator, TimeSeriesEstimator):
-            self.daily_estimator = self.base_estimator.daily_estimator
-        else:
-            self.daily_estimator = self.base_estimator
-        # Inherit attributes from the base estimator
-        for attr in self.base_estimator.__dict__.keys():
-            try:
-                setattr(self, attr, getattr(self.base_estimator, attr))
-            except AttributeError:
-                pass
-        try:
-            self.estimators_ = self.base_estimator.estimators_
-        except AttributeError:
-            pass
-        self.rain_processor = RandomForestRegressor(**kwargs)
-        if isinstance(self.daily_estimator, Pipeline):
-            self.named_steps = self.daily_estimator.named_steps
-            self._forest = self.daily_estimator.named_steps['regressor']
-            self._imputer = self.daily_estimator.named_steps['imputer']
-        else:
-            self.named_steps = None
-            self._imputer = None
-            self._forest = self.daily_estimator
-        if not hasattr(self, 'verbose'):
-            self.verbose = 1
-
-    def _get_tree_rain_prediction(self, X):
-        # Get predictions from individual trees.
-        num_samples = X.shape[0]
-        if self._imputer is not None:
-            X = self._imputer.transform(X)
-        if isinstance(self._forest, MultiOutputRegressor):
-            num_trees = len(self._forest.estimators_[0].estimators_)
-            predicted_rain = np.zeros((num_samples, num_trees))
-            for s in range(num_samples):
-                Xs = X[s].reshape(1, -1)
-                for t in range(num_trees):
-                    try:
-                        predicted_rain[s, t] = self._forest.estimators_[3].estimators_[t].predict(Xs)
-                    except AttributeError:
-                        # Work around the 2-D array of estimators for GBTrees
-                        predicted_rain[s, t] = self._forest.estimators_[3].estimators_[t][0].predict(Xs)
-        else:
-            num_trees = len(self._forest.estimators_)
-            predicted_rain = np.zeros((num_samples, num_trees))
-            for s in range(num_samples):
-                Xs = X[s].reshape(1, -1)
-                for t in range(num_trees):
-                    try:
-                        predicted_rain[s, t] = self._forest.estimators_[t].predict(Xs)
-                    except AttributeError:
-                        # Work around an error in sklearn where GBTrees have length-1 ndarrays...
-                        predicted_rain[s, t] = self._forest.estimators_[t][0].predict(Xs)
-        return predicted_rain
-
-    def _get_distribution(self, p_rain):
-        # Get the mean, std, and number of 0 forecasts from the estimator.
-        mean = np.mean(p_rain, axis=1)
-        std = np.std(p_rain, axis=1)
-        zero_frac = 1. * np.sum(p_rain < 0.01, axis=1) / p_rain.shape[1]
-        return np.stack((mean, std, zero_frac), axis=1)
-
-    def fit(self, predictor_array, verification_array, rain_array=None, **kwargs):
-        """
-        Fit the estimator and the post-processor.
-
-        :param predictor_array: ndarray-like: predictor features
-        :param verification_array: ndarray-like: truth values
-        :param rain_array: ndarray-like: raw rain from the models
-        :param kwargs: passed to the estimator's 'fit' method
-        :return:
-        """
-        # First, fit the estimator as usual
-        self.base_estimator.fit(predictor_array, verification_array, **kwargs)
-
-        # Now generate the distribution information from the individual trees in the forest
-        if self.verbose > 0:
-            print('RainTuningEstimator: getting ensemble rain predictions')
-        predicted_rain = self._get_tree_rain_prediction(predictor_array)
-        rain_distribution = self._get_distribution(predicted_rain)
-        # If raw rain values are given, add those to the distribution
-        if rain_array is not None:
-            rain_distribution = np.concatenate((rain_distribution, rain_array), axis=1)
-
-        # Fit a random forest post-processor
-        if self.verbose > 0:
-            print('RainTuningEstimator: fitting rain post-processor')
-        self.rain_processor.fit(rain_distribution, verification_array[:, 3])
-
-    def predict(self, predictor_array, rain_tuning=True, rain_array=None, **kwargs):
-        """
-        Return a prediction from the estimator with post-processed rain.
-        :param predictor_array: ndarray-like: predictor features
-        :param rain_tuning: bool: toggle option to disable rain tuning in prediction
-        :param rain_array: ndarray-like: raw rain values from models. Must be provided if fit() was called using raw
-        rain values too and rain_tuning is True.
-        :param kwargs: passed to estimator's 'predict' method
-        :return: array of predictions
-        """
-        # Predict with the estimator as usual
-        predicted = self.base_estimator.predict(predictor_array, **kwargs)
-
-        # Now get the tuned rain
-        if rain_tuning:
-            if self.verbose > 0:
-                print('RainTuningEstimator: tuning rain prediction')
-            # Get the distribution from individual trees
-            predicted_rain = self._get_tree_rain_prediction(predictor_array)
-            rain_distribution = self._get_distribution(predicted_rain)
-            if rain_array is not None:
-                rain_distribution = np.concatenate((rain_distribution, rain_array), axis=1)
-            tuned_rain = self.rain_processor.predict(rain_distribution)
-            predicted[:, 3] = tuned_rain
-
-        return predicted
 
 
 # ==================================================================================================================== #
@@ -276,7 +87,7 @@ def get_config(config_path):
         else:
             config['BUFR']['bufr_models'].append(model.lower())
 
-    # Convert kwargs, Rain tuning, and Ada boosting, if available, to int or float types
+    # Convert kwargs, Rain tuning, Ada boosting, and Bootstrapping, if available, to int or float types
     config['Model']['Parameters'].walk(walk_kwargs)
     try:
         config['Model']['Ada boosting'].walk(walk_kwargs)
@@ -284,6 +95,10 @@ def get_config(config_path):
         pass
     try:
         config['Model']['Rain tuning'].walk(walk_kwargs)
+    except KeyError:
+        pass
+    try:
+        config['Model']['Bootstrapping'].walk(walk_kwargs)
     except KeyError:
         pass
 

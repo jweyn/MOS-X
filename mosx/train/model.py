@@ -8,7 +8,8 @@
 Methods for training scikit-learn models.
 """
 
-from mosx.util import get_object, TimeSeriesEstimator, RainTuningEstimator, to_bool
+from mosx.util import get_object, to_bool
+from mosx.estimators import TimeSeriesEstimator, RainTuningEstimator, BootStrapEnsembleEstimator
 import pickle
 import numpy as np
 
@@ -25,6 +26,7 @@ def build_estimator(config):
     train_individual = config['Model']['train_individual']
     ada_boost = config['Model'].get('Ada boosting', None)
     rain_tuning = config['Model'].get('Rain tuning', None)
+    bootstrap = config['Model'].get('Bootstrapping', None)
     Regressor = get_object('sklearn.%s' % regressor)
     if config['verbose']:
         print('build_estimator: using sklearn.%s as estimator...' % regressor)
@@ -79,6 +81,12 @@ def build_estimator(config):
         rain_kwargs = rain_tuning.copy()
         rain_kwargs.pop('use_raw_rain', None)
         estimator = RainTuningEstimator(estimator, **rain_kwargs)
+
+    # Add bootstrapping if requested
+    if bootstrap is not None:
+        if config['verbose']:
+            print('build_estimator: using bootstrapping ensemble...')
+        estimator = BootStrapEnsembleEstimator(estimator, **bootstrap)
 
     return estimator
 
@@ -342,7 +350,8 @@ class SplitConsecutive(object):
 
     def get_n_splits(self, X=None, y=None, groups=None):
         """
-        Return the number of splits.
+        Return the number of splits. Dummy function for compatibility.
+
         :param X: ignored
         :param y: ignored
         :param groups: ignored

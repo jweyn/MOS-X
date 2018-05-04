@@ -73,14 +73,19 @@ Version history
     -- added automatic retrieval of climo_station_id (removed from default.config)
     -- added time_series_interval parameter to output coarser time series
     -- added option to disable climo/cf6 wind retrieval, for non-WxChallenge purposes
+2018-05-03: Version 0.10.0
+    -- moved special estimator classes to mosx.estimators
+    -- added bootstrapping training estimator
+    -- added ability to select the type of estimator for rain tuning
 
 """
 
 import bufr
+import estimators
 import obs
 import predict
 import train
 import util
 import verification
 
-__version__ = '0.9.0'
+__version__ = '0.10.0'
