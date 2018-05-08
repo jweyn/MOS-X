@@ -71,14 +71,14 @@ if not use_existing:
 
 # Re-format predictors even if using existing raw data
 print('\n--- MOS-X build: formatting predictor and target data...\n')
-mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file)
+mosx.model.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file)
 
 
 # Train the estimator and save it
 
 print('\n--- MOS-X build: generating and training estimator...\n')
 
-p_test, t_test, r_test = mosx.train.train(config, predictor_file, config['Model']['estimator_file'], test_size=1)
+p_test, t_test, r_test = mosx.model.train(config, predictor_file, config['Model']['estimator_file'], test_size=1)
 
 
 # Test the predictor

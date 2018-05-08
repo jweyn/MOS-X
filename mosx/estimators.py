@@ -199,7 +199,7 @@ class RainTuningEstimator(object):
         :param predictor_array: ndarray-like: predictor features
         :param rain_tuning: bool: toggle option to disable rain tuning in prediction
         :param rain_array: ndarray-like: raw rain values from models. Must be provided if fit() was called using raw
-        rain values too and rain_tuning is True.
+        rain values and rain_tuning is True.
         :param kwargs: passed to estimator's 'predict' method
         :return: array of predictions
         """
@@ -220,14 +220,15 @@ class RainTuningEstimator(object):
 
         return predicted
 
-    def predict_proba(self, predictor_array, rain_array=None, **kwargs):
+    def predict_proba(self, predictor_array, rain_tuning=True, rain_array=None, **kwargs):
         """
         Return a prediction from the estimator with post-processed rain, with a probability of rainfall. Should only
         be used if rain_forecast_type is 'pop'.
 
         :param predictor_array: ndarray-like: predictor features
+        :param rain_tuning: bool: toggle option to disable rain tuning in prediction
         :param rain_array: ndarray-like: raw rain values from models. Must be provided if fit() was called using raw
-        rain values.
+        rain values and rain_tuning is True.
         :param kwargs: passed to estimator's 'predict' method
         :return: array of predictions
         """
@@ -235,17 +236,36 @@ class RainTuningEstimator(object):
         predicted = self.base_estimator.predict(predictor_array, **kwargs)
 
         # Do the probabilistic prediction for rain
+        if rain_tuning:
+            if self.verbose > 0:
+                print('RainTuningEstimator: tuning rain prediction')
+            # Get the distribution from individual trees
+            predicted_rain = self._get_tree_rain_prediction(predictor_array)
+            rain_distribution = self._get_distribution(predicted_rain)
+            if rain_array is not None:
+                rain_distribution = np.concatenate((rain_distribution, rain_array), axis=1)
+            tuned_rain = self.rain_estimator.predict_proba(rain_distribution)
+            predicted[:, 3] = np.sum(tuned_rain[:, 1:], axis=1)
+
+        return predicted
+
+    def predict_rain_proba(self, predictor_array, rain_array=None):
+        """
+        Get the raw categorical probabilistic prediction from the rain post-processor.
+        :param predictor_array: ndarray-like: predictor features
+        :param rain_array: ndarray-like: raw rain values from models. Must be provided if fit() was called using raw
+        rain values.
+        :return: array of categorical rain predictions
+        """
         if self.verbose > 0:
-            print('RainTuningEstimator: tuning rain prediction')
+            print('RainTuningEstimator: getting probabilistic rain prediction')
         # Get the distribution from individual trees
         predicted_rain = self._get_tree_rain_prediction(predictor_array)
         rain_distribution = self._get_distribution(predicted_rain)
         if rain_array is not None:
             rain_distribution = np.concatenate((rain_distribution, rain_array), axis=1)
-        tuned_rain = self.rain_estimator.predict_proba(rain_distribution)
-        predicted[:, 3] = np.sum(tuned_rain[:, 1:], axis=1)
-
-        return predicted
+        categorical_rain = self.rain_estimator.predict_proba(rain_distribution)
+        return categorical_rain
 
 
 class BootStrapEnsembleEstimator(object):
@@ -322,5 +342,24 @@ class BootStrapEnsembleEstimator(object):
                 print('BootStrapEnsembleEstimator: predicting from ensemble member %d of %d' %
                       (est + 1, self.n_members))
             prediction.append(self.estimators_[est].predict(predictor_array, **kwargs))
+
+        return np.mean(np.array(prediction), axis=0)
+
+    def predict_rain_proba(self, predictor_array, rain_array=None):
+        """
+        If the base estimator is a RainTuningEstimator, yields an average prediction for categorical rain
+        probabilities.
+        :param predictor_array: ndarray-like: predictor features
+        :param rain_array: ndarray-like: raw rain values from models. Must be provided if fit() was called using raw
+        rain values.
+        :return:
+        """
+        prediction = []
+        for est in range(self.n_members):
+            try:
+                prediction.append(self.estimators_[est].predict_rain_proba(predictor_array, rain_array=rain_array))
+            except AttributeError:
+                raise AttributeError("'%s' cannot predict rain category probabilities; use RainTuningEstimator" %
+                                     type(self.base_estimator))
 
         return np.mean(np.array(prediction), axis=0)

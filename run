@@ -28,11 +28,11 @@ def get_command_options():
     parser = OptionParser()
     parser.add_option('-d', '--date', dest='datestr', action='store', type='string', default='tomorrow',
                       help='Date to run model for, YYYYMMDD (default=tomorrow)')
-    parser.add_option('-t', '--tune-rain', dest='tune_rain', action='store_true', default=False,
-                      help='Apply manual rainfall tuning')
-    parser.add_option('-r', '--average-rain', dest='avg_rain', action='store_true', default=False,
+    parser.add_option('-t', '--naive-rain-correction', dest='tune_rain', action='store_true', default=False,
+                      help='Use the raw precipitation from GFS/NAM to override or average with MOS-X')
+    parser.add_option('-r', '--rain-post-average', dest='avg_rain', action='store_true', default=False,
                       help='If using a RainTuningEstimator, this will average the raw estimation from an ensemble'
-                           '(if -p is True) with that of the rain tuning post-processor')
+                           'with that of the rain tuning post-processor')
     parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False,
                       help='Write to a pickle file')
     parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default='default',
@@ -92,26 +92,27 @@ mosx.obs.obs(config, obs_file, use_nan_sounding=True, use_existing_sounding=Fals
 
 predictor_file = '%s/%s_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X run: formatting predictor data...\n')
-mosx.train.format_predictors(config, bufr_file, obs_file, None, predictor_file)
+mosx.model.format_predictors(config, bufr_file, obs_file, None, predictor_file)
 
 
 # Make a prediction!
 
 print('\n--- MOS-X run: making the forecast...\n')
+predicted, all_predicted, predicted_timeseries = mosx.model.model.predict_all(config, predictor_file, ensemble=prob,
+                                                                              time_series_date=verif_date,
+                                                                              naive_rain_correction=options.tune_rain,
+                                                                              round=not prob)
+if options.avg_rain:
+    no_tuned_predictions = mosx.model.model.predict_all(config, predictor_file, ensemble=prob, time_series_date=verif_date,
+                                                        naive_rain_correction=options.tune_rain, round=not prob,
+                                                        rain_tuning=False)
 
-predicted, all_predicted, predicted_timeseries = mosx.predict.predict(config, predictor_file, ensemble=prob,
-                                                                      time_series_date=verif_date,
-                                                                      tune_rain=options.tune_rain,
-                                                                      round=not prob)
 predicted = np.squeeze(predicted)
 if options.avg_rain:
-    if all_predicted is not None:
-        avg_rain = np.mean(all_predicted[:, 3])
-        print('Adjusting rain estimate to average of raw (%0.2f) and tuned (%0.2f) values' %
-              (avg_rain, predicted[3]))
-        predicted[3] = np.mean([predicted[3], avg_rain])
-    else:
-        print('Warning: rain averaging selected but no ensemble predictions are available (did you enable -p?)')
+    no_tuned_rain = no_tuned_predictions[0][0, 3]
+    print('Adjusting rain estimate to average of raw (%0.2f) and tuned (%0.2f) values' %
+          (no_tuned_rain, predicted[3]))
+    predicted[3] = np.mean([predicted[3], no_tuned_rain])
 
 
 # Print forecast!

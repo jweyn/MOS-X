@@ -12,6 +12,7 @@ Perform cross-validation of the MOS-X model for a range of dates specified in th
 import mosx
 import os
 import sys
+import numpy as np
 from optparse import OptionParser
 from datetime import datetime
 import pickle
@@ -25,8 +26,11 @@ def get_command_options():
     parser = OptionParser()
     parser.add_option('-o', '--overwrite', dest='overwrite', action='store_true', default=False,
                       help='Overwrite any existing BUFR, obs, and verification files')
-    parser.add_option('-t', '--tune-rain', dest='tune_rain', action='store_true', default=False,
-                      help='Apply manual rainfall tuning')
+    parser.add_option('-t', '--naive-rain-correction', dest='tune_rain', action='store_true', default=False,
+                      help='Use the raw precipitation from GFS/NAM to override or average with MOS-X')
+    parser.add_option('-r', '--rain-post-average', dest='avg_rain', action='store_true', default=False,
+                      help='If using a RainTuningEstimator, this will average the raw estimation from an ensemble'
+                           'with that of the rain tuning post-processor')
     parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False, help='Write a CSV file')
     default_file = './MOSX_CV.csv'
     parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default=default_file,
@@ -83,7 +87,8 @@ if os.path.isfile(verif_file) and not overwrite:
     print('Using existing verif file %s' % verif_file)
     print('If issues occur, delete this file and try again')
 else:
-    mosx.verification.verification(config, verif_file, use_climo=True)
+    mosx.verification.verification(config, verif_file, use_climo=config['Obs']['use_climo_wind'],
+                                   use_cf6=config['Obs']['use_climo_wind'])
 with open(verif_file, 'rb') as handle:
     verif = pickle.load(handle)
 
@@ -92,15 +97,19 @@ with open(verif_file, 'rb') as handle:
 
 predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X validate: formatting predictor data...\n')
-all_dates = mosx.train.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file,
+all_dates = mosx.model.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file,
                                          return_dates=True)
 
 
 # Make a prediction!
 
-predicted, all_predicted, predicted_timeseries = mosx.predict.predict(config, predictor_file,
-                                                                      tune_rain=options.tune_rain)
-
+predicted, all_predicted, predicted_timeseries = mosx.model.predict_all(config, predictor_file,
+                                                                        naive_rain_correction=options.tune_rain)
+if options.avg_rain:
+    print('Using average of raw and rain-tuned precipitation forecasts')
+    no_tuned_predictions = mosx.model.predict_all(config, predictor_file, naive_rain_correction=options.tune_rain,
+                                                  rain_tuning=False)
+    predicted = np.mean([predicted, no_tuned_predictions[0]], axis=0)
 
 # Print forecasts!
 

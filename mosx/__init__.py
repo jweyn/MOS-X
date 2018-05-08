@@ -77,14 +77,14 @@ Version history
     -- moved special estimator classes to mosx.estimators
     -- added bootstrapping training estimator
     -- added ability to select the type of estimator for rain tuning
+    -- re-organized the 'train' and 'predict' modules to 'model'
 
 """
 
 import bufr
 import estimators
 import obs
-import predict
-import train
+import model
 import util
 import verification
 

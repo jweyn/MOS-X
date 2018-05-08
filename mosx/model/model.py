@@ -8,7 +8,10 @@
 Methods for training scikit-learn models.
 """
 
-from mosx.util import get_object, to_bool
+from datetime import datetime, timedelta
+import pandas as pd
+
+from mosx.util import get_object, to_bool, dewpoint
 from mosx.estimators import TimeSeriesEstimator, RainTuningEstimator, BootStrapEnsembleEstimator
 import pickle
 import numpy as np
@@ -329,12 +332,12 @@ class SplitConsecutive(object):
 
     def split(self, X, y=None, groups=None):
         """
-        Produces arrays of indices to use for train and test splits.
+        Produces arrays of indices to use for model and test splits.
 
         :param X: array-like, shape (samples, features): predictor data
         :param y: array-like, shape (samples, outputs) or None: verification data; ignored
         :param groups: ignored
-        :return: train, test: 1-D arrays of sample indices in the train and test sets
+        :return: model, test: 1-D arrays of sample indices in the model and test sets
         """
         num_samples = X.shape[0]
         indices = np.arange(0, num_samples, 1, dtype=np.int32)
@@ -358,3 +361,163 @@ class SplitConsecutive(object):
         :return:
         """
         return self.n_splits
+
+
+def predict_all(config, predictor_file, ensemble=False, time_series_date=None, naive_rain_correction=False, round=False,
+                **kwargs):
+    """
+    Predict forecasts from the estimator in config. Also return probabilities and time series.
+
+    :param config:
+    :param predictor_file: str: file containing predictor data from mosx.model.format_predictors
+    :param ensemble: bool: if True, return an array of num_trees-by-4 of the predictions of each tree in the estimator
+    :param time_series_date: datetime: if set, returns a time series prediction from the estimator, where the datetime
+    provided is the day the forecast is for (only works for single-day runs, or assumes last day)
+    :param naive_rain_correction: bool: if True, applies manual tuning to the rain forecast
+    :param round: bool: if True, rounds the predicted estimate
+    :param kwargs: passed to the estimator's 'predict' method
+    :return:
+    """
+    # Load the predictor data and estimator
+    with open(predictor_file, 'rb') as handle:
+        predictor_data = pickle.load(handle)
+    rain_tuning = config['Model'].get('Rain tuning', None)
+    if config['verbose']:
+        print('predict: loading estimator %s' % config['Model']['estimator_file'])
+    with open(config['Model']['estimator_file'], 'rb') as handle:
+        estimator = pickle.load(handle)
+
+    predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
+    if config['Model']['rain_forecast_type'] == 'pop' and getattr(estimator, 'is_classifier', False):
+        predict_method = estimator.predict_proba
+    else:
+        predict_method = estimator.predict
+    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+        predicted = predict_method(predictors, rain_array=predictor_data.rain, **kwargs)
+    else:
+        predicted = predict_method(predictors, **kwargs)
+    precip = predictor_data.rain
+
+    # Check for precipitation override
+    if naive_rain_correction:
+        for day in range(predicted.shape[0]):
+            if sum(precip[day]) < 0.01:
+                if config['verbose']:
+                    print('predict: warning: overriding MOS-X rain prediction of %0.2f on day %s with 0' %
+                          (predicted[day, 3], day))
+                predicted[day, 3] = 0.
+            elif predicted[day, 3] > max(precip[day]) or predicted[day, 3] < min(precip[day]):
+                if config['verbose']:
+                    print('predict: warning: overriding MOS-X prediction of %0.2f on day %s with model mean' %
+                          (predicted[day, 3], day))
+                predicted[day, 3] = max(0., np.mean(precip[day] + [predicted[day, 3]]))
+    else:
+        # At least make sure we aren't predicting negative values...
+        predicted[:, 3][predicted[:, 3] < 0] = 0.0
+
+    # Round off daily values, if selected
+    if round:
+        predicted[:, :3] = np.round(predicted[:, :3])
+        predicted[:, 3] = np.round(predicted[:, 3], 2)
+
+    # If probabilities are requested and available, get the results from each tree
+    if not (config['Model']['regressor'].startswith('ensemble')):
+        ensemble = False
+    if ensemble:
+        if not hasattr(estimator, 'named_steps'):
+            forest = estimator
+        else:
+            imputer = estimator.named_steps['imputer']
+            forest = estimator.named_steps['regressor']
+            predictors = imputer.transform(predictors)
+        # If we generated our own ensemble by bootstrapping, it must be treated as such
+        if config['Model']['train_individual'] and config['Model'].get('Bootstrapping', None) is None:
+            num_trees = len(forest.estimators_[0].estimators_)
+            all_predicted = np.zeros((num_trees, 4))
+            for v in range(4):
+                for t in range(num_trees):
+                    try:
+                        all_predicted[t, v] = forest.estimators_[v].estimators_[t].predict(predictors)
+                    except AttributeError:
+                        # Work around the 2-D array of estimators for GBTrees
+                        all_predicted[t, v] = forest.estimators_[v].estimators_[t][0].predict(predictors)
+        else:
+            num_trees = len(forest.estimators_)
+            all_predicted = np.zeros((num_trees, 4))
+            for t in range(num_trees):
+                try:
+                    all_predicted[t, :] = forest.estimators_[t].predict(predictors)[:4]
+                except AttributeError:
+                    # Work around the 2-D array of estimators for GBTrees
+                    all_predicted[t, :] = forest.estimators_[t][0].predict(predictors)[:4]
+    else:
+        all_predicted = None
+
+    if config['Model']['predict_timeseries']:
+        if time_series_date is None:
+            date_now = datetime.utcnow()
+            time_series_date = datetime(date_now.year, date_now.month, date_now.day) + timedelta(days=1)
+            print('predict: warning: set time series start date to %s (was unspecified)' % time_series_date)
+        num_hours = int(24 / config['time_series_interval']) + 1
+        predicted_array = predicted[-1, 4:].reshape((4, num_hours)).T
+        # Get dewpoint
+        predicted_array[:, 2] = dewpoint(predicted_array[:, 0], predicted_array[:, 2])
+        times = pd.date_range(time_series_date.replace(hour=6), periods=num_hours,
+                              freq='%dH' % config['time_series_interval']).to_pydatetime().tolist()
+        variables = ['temperature', 'rain', 'dewpoint', 'windSpeed']
+        round_dict = {'temperature': 0, 'rain': 2, 'dewpoint': 0, 'windSpeed': 0}
+        predicted_timeseries = pd.DataFrame(predicted_array, index=times, columns=variables)
+        predicted_timeseries = predicted_timeseries.round(round_dict)
+    else:
+        predicted_timeseries = None
+
+    return predicted, all_predicted, predicted_timeseries
+
+
+def predict(config, predictor_file, naive_rain_correction=False, round=False, **kwargs):
+    """
+    Predict forecasts from the estimator in config. Only returns daily values.
+
+    :param config:
+    :param predictor_file: str: file containing predictor data from mosx.model.format_predictors
+    :param naive_rain_correction: bool: if True, applies manual tuning to the rain forecast
+    :param round: bool: if True, rounds the predicted estimate
+    :param kwargs: passed to the estimator's 'predict' method
+    :return:
+    """
+
+    predicted, all_predicted, predicted_timeseries = predict_all(config, predictor_file,
+                                                                 naive_rain_correction=naive_rain_correction,
+                                                                 round=round, **kwargs)
+    return predicted
+
+
+def predict_rain_proba(config, predictor_file):
+    """
+    Predict probabilistic rain forecasts for 'pop' or 'categorical' types.
+
+    :param config:
+    :param predictor_file: str: file containing predictor data from mosx.model.format_predictors
+    :return:
+    """
+    if config['Model']['rain_forecast_type'] not in ['pop', 'categorical']:
+        raise TypeError("'quantity' rain forecast is not probabilistic, cannot get probabilities")
+    rain_tuning = config['Model'].get('Rain tuning', None)
+    if rain_tuning is None:
+        return
+
+    # Load the predictor data and estimator
+    with open(predictor_file, 'rb') as handle:
+        predictor_data = pickle.load(handle)
+    if config['verbose']:
+        print('predict: loading estimator %s' % config['Model']['estimator_file'])
+    with open(config['Model']['estimator_file'], 'rb') as handle:
+        estimator = pickle.load(handle)
+
+    predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
+    if to_bool(rain_tuning.get('use_raw_rain', False)):
+        rain_proba = estimator.predict_rain_proba(predictors, rain_array=predictor_data.rain)
+    else:
+        rain_proba = estimator.predict_rain_proba(predictors)
+
+    return rain_proba
