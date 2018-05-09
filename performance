@@ -16,28 +16,102 @@ import pandas as pd
 import os
 import sys
 import pickle
+import string
 from optparse import OptionParser
 from datetime import datetime
-import matplotlib.pyplot as plt
+import warnings
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score
+from sklearn.preprocessing import LabelBinarizer
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gs
+from matplotlib import rc
+
+# Set matplotlib rc parameters
+rc('font', **{'family': 'Times New Roman'})
+matplotlib.rcParams['mathtext.fontset'] = 'custom'
+matplotlib.rcParams['mathtext.rm'] = 'Times New Roman'
+matplotlib.rcParams['mathtext.it'] = 'Times New Roman:italic'
+matplotlib.rcParams['mathtext.bf'] = 'Times New Roman:bold'
+matplotlib.rcParams.update({'font.size': 12})
 
 # Suppress warnings
-import warnings
 warnings.filterwarnings("ignore")
 
 
 def get_command_options():
     parser = OptionParser()
-    parser.add_option('-l', '--learning-curve', dest='learning', action='store_true', default=False,
-                      help='Generate a learning curve by re-training the model (time consuming)')
     parser.add_option('-t', '--naive-rain-correction', dest='tune_rain', action='store_true', default=False,
                       help='Use the raw precipitation from GFS/NAM to override or average with MOS-X')
+    parser.add_option('-e', '--ensemble', dest='ensemble', action='store_true', default=False,
+                      help='Calculate ensemble statistics (for a valid ensemble estimator)')
     parser.add_option('-r', '--rain-post-average', dest='avg_rain', action='store_true', default=False,
                       help='If using a RainTuningEstimator, this will average the raw estimation from an ensemble'
                            'with that of the rain tuning post-processor')
+    parser.add_option('-l', '--learning-curve', dest='learning', action='store_true', default=False,
+                      help='Generate a learning curve by re-training the model (time consuming)')
+    parser.add_option('-s', '--spread-skill', dest='spread_skill', action='store_true', default=False,
+                      help='Plot spread-skill relationship for an ensemble (if -e is enabled)')
     (opts, args) = parser.parse_args()
     return opts, args
 
+
+def brier_score(y, x):
+    num_categories = max(x.shape[1], y.shape[1])
+    while x.shape[1] < num_categories:
+        x = np.c_[x, np.zeros(x.shape[0])]
+    while y.shape[1] < num_categories:
+        y = np.c_[y, np.zeros(y.shape[0])]
+    score = np.sum((x - y) ** 2, axis=1)
+    return np.mean(score / num_categories)
+
+
+def mean_variance(X):
+    return np.mean(np.var(X, axis=-1), axis=0)
+
+
+def plot_spread_skill(X, y, grid=False, one_to_one=True,
+                      width=6, height=6):
+
+    fig = plt.figure()
+    fig.set_size_inches(width, height)
+    rows = 2
+    columns = 2
+    gs1 = gs.GridSpec(rows, columns)
+    gs1.update(wspace=0.20, hspace=0.20)
+    colors = [c['color'] for c in list(matplotlib.rcParams['axes.prop_cycle'])]
+    params = ['High', 'Low', 'Wind', 'Rain']
+    limits = [10., 10., 8., 2.]
+
+    var = np.var(X, axis=-1)
+    mse = np.mean(np.transpose((np.transpose(X, (2, 0, 1)) - y)**2, (1, 2, 0)), axis=-1)
+
+    for plot_num in range(len(params)):
+        ax = plt.subplot(gs1[plot_num])
+        plt.scatter(mse[:, plot_num], var[:, plot_num], c=colors[plot_num], s=max(width, height)/2.)
+        plt.xlim([0., limits[plot_num]])
+        plt.ylim([0., limits[plot_num]])
+        if grid:
+            plt.grid(grid, linestyle='--', color=[0.8, 0.8, 0.8])
+        if one_to_one:
+            curr_xlim = ax.get_xlim()
+            curr_ylim = ax.get_ylim()
+            max_limit = max(np.max(curr_xlim), np.max(curr_ylim))
+            min_limit = min(np.min(curr_xlim), np.min(curr_ylim))
+            plt.plot([min_limit, max_limit], [min_limit, max_limit], 'k')
+        if (plot_num + 1) % columns == 1:
+            plt.ylabel('spread')
+        if (plot_num + 1) > columns * (rows - 1):
+            plt.xlabel('error')
+        letters = list(string.ascii_lowercase)
+        panel_label = '%s) %s' % (letters[plot_num], params[plot_num])
+        ax.annotate(panel_label, xycoords='axes fraction', xy=(0.05, 0.95), horizontalalignment='left',
+                    verticalalignment='top')
+
+    return fig
+
+
+# Get options and config
 
 options, arguments = get_command_options()
 
@@ -59,7 +133,7 @@ if not(os.path.isfile(predictor_file)):
     sys.exit(1)
 
 
-# Do some general regression characteristic scores from scikit-learn
+# Open predictors file from validate
 
 with open(predictor_file, 'rb') as handle:
     predictors = pickle.load(handle)
@@ -69,8 +143,8 @@ true_array = predictors['VERIF']
 
 # Make the prediction
 
-predicted, all_predicted, predicted_timeseries = mosx.model.predict_all(config, predictor_file,
-                                                                        naive_rain_correction=options.tune_rain)
+predicted, all_predicted, ps = mosx.model.predict_all(config, predictor_file, ensemble=options.ensemble,
+                                                      naive_rain_correction=options.tune_rain)
 if options.avg_rain:
     print('Using average of raw and rain-tuned precipitation forecasts')
     no_tuned_predictions = mosx.model.predict_all(config, predictor_file, naive_rain_correction=options.tune_rain,
@@ -81,7 +155,7 @@ if options.avg_rain:
 # Calculate general performance scores
 
 multi = 'raw_values'
-scores = np.nan * np.zeros((5, 4))
+scores = np.nan * np.zeros((6, 4))
 scores[0] = explained_variance_score(true_array[:, :4], predicted[:, :4], multioutput=multi)
 scores[1] = mean_absolute_error(true_array[:, :4], predicted[:, :4], multioutput=multi)
 scores[2] = mean_squared_error(true_array[:, :4], predicted[:, :4], multioutput=multi)
@@ -90,10 +164,16 @@ scores[3] = r2_score(true_array[:, :4], predicted[:, :4], multioutput=multi)
 if config['Model']['rain_forecast_type'] in ['pop', 'categorical']:
     # Try to get probabilities for each category of rain
     rain_prob = mosx.model.predict_rain_proba(config, predictor_file)
+    lb = LabelBinarizer()
+    rain_categories = lb.fit_transform(true_array[:, 3])
+    scores[4, 3] = brier_score(rain_categories, rain_prob)
+
+if options.ensemble:
+    scores[5] = mean_variance(all_predicted[:, :4, :])
 
 scores_df = pd.DataFrame(scores)
-score_names = ['Explained variance score', 'Mean absolute error', 'Mean squared error',
-               'R^2 coefficient of determination', 'Brier score']
+score_names = ['Explained variance score', 'Mean absolute bias', 'Mean squared bias',
+               'R^2 coefficient of determination', 'Brier score', 'Mean ensemble variance']
 score_columns = ['High', 'Low', 'Wind', 'Rain']
 scores_df.index = score_names
 scores_df.columns = score_columns
@@ -111,6 +191,13 @@ if options.learning:
                                                                         return_count_test=True)
     cv = mosx.model.SplitConsecutive(first=False, n_samples=n_samples_test)
     scorer = mosx.model.wxchallenge_scorer(no_rain=True)
-    fig = mosx.model._plot_learning_curve(mosx.model.build_estimator(config), predictors, targets, cv=cv,
+    figure = mosx.model._plot_learning_curve(mosx.model.build_estimator(config), predictors, targets, cv=cv,
                                           scoring=scorer)
-    plt.savefig('learning_curve.pdf')
+    plt.savefig('learning_curve.pdf', bbox_inches='tight')
+
+
+# Optional spread-skill plot
+
+if options.spread_skill and options.ensemble:
+    figure = plot_spread_skill(all_predicted, true_array, )
+    plt.savefig('spread_skill.pdf', bbox_inches='tight')

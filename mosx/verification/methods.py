@@ -482,11 +482,14 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
         rain_column = 'precip_last_%d_hour' % config['time_series_interval']
         obs_hourly_verify.rename(columns={'precip_accum_one_hour': rain_column}, inplace=True)
         if config['Model']['rain_forecast_type'] == 'pop' and not force_rain_quantity:
+            if config['verbose']:
+                print("verification: using 'pop' rain")
             obs_hourly_verify.loc[:, rain_column] = pop_rain(obs_hourly_verify[rain_column])
             use_rain_max = True
         elif config['Model']['rain_forecast_type'] == 'categorical' and not force_rain_quantity:
-            obs_hourly_verify.loc[:, rain_column] = categorical_rain(
-                obs_hourly_verify[rain_column])
+            if config['verbose']:
+                print("verification: using 'categorical' rain")
+            obs_hourly_verify.loc[:, rain_column] = categorical_rain(obs_hourly_verify[rain_column])
             use_rain_max = True
         else:
             use_rain_max = False

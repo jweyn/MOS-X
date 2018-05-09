@@ -363,8 +363,8 @@ class SplitConsecutive(object):
         return self.n_splits
 
 
-def predict_all(config, predictor_file, ensemble=False, time_series_date=None, naive_rain_correction=False, round=False,
-                **kwargs):
+def predict_all(config, predictor_file, ensemble=False, time_series_date=None, naive_rain_correction=False,
+                round_result=False, **kwargs):
     """
     Predict forecasts from the estimator in config. Also return probabilities and time series.
 
@@ -374,9 +374,12 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
     :param time_series_date: datetime: if set, returns a time series prediction from the estimator, where the datetime
     provided is the day the forecast is for (only works for single-day runs, or assumes last day)
     :param naive_rain_correction: bool: if True, applies manual tuning to the rain forecast
-    :param round: bool: if True, rounds the predicted estimate
+    :param round_result: bool: if True, rounds the predicted estimate
     :param kwargs: passed to the estimator's 'predict' method
     :return:
+    predicted: ndarray: num_samples x num_predicted_variables predictions
+    all_predicted: ndarray: num_samples x num_predicted_variables x num_ensemble_members predictions for all trees
+    predicted_timeseries: DataFrame: time series for final sample
     """
     # Load the predictor data and estimator
     with open(predictor_file, 'rb') as handle:
@@ -416,14 +419,13 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
         predicted[:, 3][predicted[:, 3] < 0] = 0.0
 
     # Round off daily values, if selected
-    if round:
+    if round_result:
         predicted[:, :3] = np.round(predicted[:, :3])
         predicted[:, 3] = np.round(predicted[:, 3], 2)
 
     # If probabilities are requested and available, get the results from each tree
-    if not (config['Model']['regressor'].startswith('ensemble')):
-        ensemble = False
     if ensemble:
+        num_samples = predictors.shape[0]
         if not hasattr(estimator, 'named_steps'):
             forest = estimator
         else:
@@ -433,23 +435,23 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
         # If we generated our own ensemble by bootstrapping, it must be treated as such
         if config['Model']['train_individual'] and config['Model'].get('Bootstrapping', None) is None:
             num_trees = len(forest.estimators_[0].estimators_)
-            all_predicted = np.zeros((num_trees, 4))
+            all_predicted = np.zeros((num_samples, 4, num_trees))
             for v in range(4):
                 for t in range(num_trees):
                     try:
-                        all_predicted[t, v] = forest.estimators_[v].estimators_[t].predict(predictors)
+                        all_predicted[:, v, t] = forest.estimators_[v].estimators_[t].predict(predictors)
                     except AttributeError:
                         # Work around the 2-D array of estimators for GBTrees
-                        all_predicted[t, v] = forest.estimators_[v].estimators_[t][0].predict(predictors)
+                        all_predicted[:, v, t] = forest.estimators_[v].estimators_[t][0].predict(predictors)
         else:
             num_trees = len(forest.estimators_)
-            all_predicted = np.zeros((num_trees, 4))
+            all_predicted = np.zeros((num_samples, 4, num_trees))
             for t in range(num_trees):
                 try:
-                    all_predicted[t, :] = forest.estimators_[t].predict(predictors)[:4]
+                    all_predicted[:, :, t] = forest.estimators_[t].predict(predictors)[:, :4]
                 except AttributeError:
                     # Work around the 2-D array of estimators for GBTrees
-                    all_predicted[t, :] = forest.estimators_[t][0].predict(predictors)[:4]
+                    all_predicted[:, :, t] = forest.estimators_[t][0].predict(predictors)[:, :4]
     else:
         all_predicted = None
 
@@ -488,7 +490,7 @@ def predict(config, predictor_file, naive_rain_correction=False, round=False, **
 
     predicted, all_predicted, predicted_timeseries = predict_all(config, predictor_file,
                                                                  naive_rain_correction=naive_rain_correction,
-                                                                 round=round, **kwargs)
+                                                                 round_result=round, **kwargs)
     return predicted
 
 
@@ -504,7 +506,7 @@ def predict_rain_proba(config, predictor_file):
         raise TypeError("'quantity' rain forecast is not probabilistic, cannot get probabilities")
     rain_tuning = config['Model'].get('Rain tuning', None)
     if rain_tuning is None:
-        return
+        raise TypeError('Probabilistic rain forecasts are only possible with a RainTuningEstimator')
 
     # Load the predictor data and estimator
     with open(predictor_file, 'rb') as handle:

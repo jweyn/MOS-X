@@ -103,13 +103,12 @@ all_dates = mosx.model.format_predictors(config, bufr_file, obs_file, verif_file
 
 # Make a prediction!
 
-predicted, all_predicted, predicted_timeseries = mosx.model.predict_all(config, predictor_file,
-                                                                        naive_rain_correction=options.tune_rain)
+predicted = mosx.model.predict(config, predictor_file,naive_rain_correction=options.tune_rain)
 if options.avg_rain:
     print('Using average of raw and rain-tuned precipitation forecasts')
-    no_tuned_predictions = mosx.model.predict_all(config, predictor_file, naive_rain_correction=options.tune_rain,
-                                                  rain_tuning=False)
-    predicted = np.mean([predicted, no_tuned_predictions[0]], axis=0)
+    no_tuned_predictions = mosx.model.predict(config, predictor_file, naive_rain_correction=options.tune_rain,
+                                              rain_tuning=False)
+    predicted = np.mean([predicted, no_tuned_predictions], axis=0)
 
 # Print forecasts!
 

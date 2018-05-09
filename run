@@ -101,10 +101,11 @@ print('\n--- MOS-X run: making the forecast...\n')
 predicted, all_predicted, predicted_timeseries = mosx.model.model.predict_all(config, predictor_file, ensemble=prob,
                                                                               time_series_date=verif_date,
                                                                               naive_rain_correction=options.tune_rain,
-                                                                              round=not prob)
+                                                                              round_result=not prob)
 if options.avg_rain:
-    no_tuned_predictions = mosx.model.model.predict_all(config, predictor_file, ensemble=prob, time_series_date=verif_date,
-                                                        naive_rain_correction=options.tune_rain, round=not prob,
+    no_tuned_predictions = mosx.model.model.predict_all(config, predictor_file, ensemble=prob,
+                                                        time_series_date=verif_date,
+                                                        naive_rain_correction=options.tune_rain, round_result=not prob,
                                                         rain_tuning=False)
 
 predicted = np.squeeze(predicted)
@@ -124,7 +125,7 @@ print('\nFor day %s at %s, the predicted forecast is' % (new_end_date,
 print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[:4]))
 
 if prob:
-    predicted_std = np.std(all_predicted, axis=0)
+    predicted_std = np.squeeze(np.std(all_predicted, axis=-1))
     predicted_display = []
     for v in range(4):
         predicted_display.append(predicted[v])
@@ -243,14 +244,14 @@ if prob:
             elif config['Model']['rain_forecast_type'] == 'quantity':
                 unit = 0.05
                 decimals = 3
-            plot_histogram(gs1[plot_num], predicted[:, plot_num], unit, facecolor=colors[plot_num],
+            plot_histogram(gs1[plot_num], predicted[plot_num, :], unit, facecolor=colors[plot_num],
                            decimals=decimals, title=titles[plot_num])
 
         verif_date_str = datetime.strftime(verif_date, '%Y/%m/%d')
         plt.suptitle('MOS-X probability distributions, %s on %s' % (config['station_id'], verif_date_str))
         plt.savefig(prob_file, dpi=200)
 
-    plot_probabilities(all_predicted)
+    plot_probabilities(np.squeeze(all_predicted))
 
 
 # Upload, if requested
