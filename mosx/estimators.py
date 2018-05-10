@@ -362,4 +362,13 @@ class BootStrapEnsembleEstimator(object):
                 raise AttributeError("'%s' cannot predict rain category probabilities; use RainTuningEstimator" %
                                      type(self.base_estimator))
 
-        return np.mean(np.array(prediction), axis=0)
+        # Fix the shape of the arrays, in case some predictions don't have all categories of rain
+        rain_dims = [p.shape[1] for p in prediction]
+        max_dim = np.max(rain_dims)
+        new_prediction = []
+        for p in prediction:
+            while p.shape[1] < max_dim:
+                p = np.c_[p, np.zeros(p.shape[0])]
+            new_prediction.append(p)
+
+        return np.mean(np.array(new_prediction), axis=0)
