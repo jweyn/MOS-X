@@ -26,6 +26,11 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gs
 from matplotlib import rc
+try:
+    from properscoring import crps_ensemble
+    crps = True
+except ImportError:
+    crps = False
 
 
 # Set matplotlib rc parameters
@@ -194,7 +199,7 @@ if options.avg_rain:
 
 print('\n--- MOS-X performance: generating global performance scores...\n')
 multi = 'raw_values'
-scores = np.nan * np.zeros((6, 4))
+scores = np.nan * np.zeros((7, 4))
 scores[0] = explained_variance_score(true_array[:, :4], predicted[:, :4], multioutput=multi)
 scores[1] = mean_absolute_error(true_array[:, :4], predicted[:, :4], multioutput=multi)
 scores[2] = mean_squared_error(true_array[:, :4], predicted[:, :4], multioutput=multi)
@@ -202,7 +207,7 @@ scores[3] = r2_score(true_array[:, :4], predicted[:, :4], multioutput=multi)
 
 if config['Model']['rain_forecast_type'] in ['pop', 'categorical']:
     # Try to get probabilities for each category of rain
-    print('\n--- MOS-X performance: making probabilistic rain predictions...\n')
+    print('MOS-X performance: making probabilistic rain predictions...')
     rain_prob = mosx.model.predict_rain_proba(config, predictor_file)
     lb = LabelBinarizer()
     rain_categories = lb.fit_transform(true_array[:, 3])
@@ -211,9 +216,12 @@ if config['Model']['rain_forecast_type'] in ['pop', 'categorical']:
 if options.ensemble:
     scores[5] = mean_variance(all_predicted[:, :4, :])
 
+if options.ensemble and crps:
+    scores[6] = np.mean(crps_ensemble(true_array[:, :4], all_predicted[:, :4, :], axis=-1), axis=0)
+
 scores_df = pd.DataFrame(scores)
 score_names = ['Explained variance score', 'Mean absolute bias', 'Mean squared bias',
-               'R^2 coefficient of determination', 'Brier score', 'Mean ensemble variance']
+               'R^2 coefficient of determination', 'Brier score', 'Mean ensemble variance', 'CRPS']
 score_columns = ['High', 'Low', 'Wind', 'Rain']
 scores_df.index = score_names
 scores_df.columns = score_columns
