@@ -169,7 +169,7 @@ def get_obs_hourly(config, api_dates, vars_api, units):
 
         # Re-index by hourly. Fills missing with NaNs. Try to interpolate the NaNs.
         expected_start = datetime.strptime(api_date[0], '%Y%m%d%H%M').replace(minute=minute_mode)
-        expected_end = datetime.strptime(api_date[1], '%Y%m%d%H%M').replace(minute=minute_mode)
+        expected_end = datetime.strptime(api_date[1], '%Y%m%d%H%M')
         expected_times = pd.date_range(expected_start, expected_end, freq='H').to_pydatetime()
         obs_hourly = obs_hourly.reindex(expected_times)
         obs_hourly = obs_hourly.interpolate(limit=3)

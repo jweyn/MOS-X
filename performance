@@ -60,6 +60,8 @@ def get_command_options():
                       help='Plot spread-skill relationship for an ensemble (if -e is enabled)')
     parser.add_option('-H', '--rank-histogram', dest='histogram', action='store_true', default=False,
                       help='Plot rank histograms for an ensemble (if -e is enabled)')
+    parser.add_option('-E', '--error-distribution', dest='error_plot', action='store_true', default=False,
+                      help='Plot error distributions')
     (opts, args) = parser.parse_args()
     return opts, args
 
@@ -150,6 +152,41 @@ def plot_rank_histogram(X, y, width=6, height=6):
     for plot_num in range(4):
         rank = np.sum(X[:, plot_num, :].T < y[:, plot_num], axis=0).T
         plot_histogram(gs1[plot_num], rank, facecolor=colors[plot_num])
+
+    return fig
+
+
+def plot_error(X, y, width=6, height=6):
+    fig = plt.figure()
+    fig.set_size_inches(width, height)
+    gs1 = gs.GridSpec(2, 2)
+    gs1.update(wspace=0.18, hspace=0.18)
+    colors = [c['color'] for c in list(matplotlib.rcParams['axes.prop_cycle'])]
+    params = ['High', 'Low', 'Wind', 'Rain']
+
+    def plot_histogram(subplot_num, x, unit=None, facecolor='b', bins=None, align='left'):
+        global fig
+        ax = plt.subplot(subplot_num)
+        if bins is None and unit is not None:
+            bins = max(int(np.nanmax(x) / unit - np.nanmin(x) / unit), 1)
+        n, bins, patches = plt.hist(x, bins=bins, facecolor=facecolor, normed=True, align=align, )
+        ylim = ax.get_ylim()
+        if ylim[1] - np.nanmax(n) < 0.005:
+            ax.set_ylim([ylim[0], ylim[1] + 0.005])
+        if unit is None:
+            unit = 1.
+        ax.set_yticklabels(['{:.1f}'.format(100. * l * unit) for l in plt.yticks()[0]])
+        if plot_num % 2 == 0:
+            ax.set_ylabel('frequency (%)')
+        letters = list(string.ascii_lowercase)
+        panel_label = '%s) %s' % (letters[plot_num], params[plot_num])
+        ax.annotate(panel_label, xycoords='axes fraction', xy=(0.05, 0.95), horizontalalignment='left',
+                    verticalalignment='top')
+        return
+
+    for plot_num in range(4):
+        error = X[:, plot_num] - y[:, plot_num]
+        plot_histogram(gs1[plot_num], error, facecolor=colors[plot_num], unit=1)
 
     return fig
 
@@ -264,3 +301,11 @@ if options.histogram and options.ensemble:
     plt.savefig('rank_histogram.pdf', bbox_inches='tight')
 elif options.histogram:
     print("warning: '--rank-histogram' option enabled but no ensemble predictions (--ensemble) were enabled!")
+
+
+# Optional error distribution plot
+
+if options.error_plot:
+    print("\n--- MOS-X performance: exporting error distribution figure to 'error_distribution.pdf'...\n")
+    figure = plot_error(predicted, true_array, )
+    plt.savefig('error_distribution.pdf', bbox_inches='tight')

@@ -78,6 +78,9 @@ Version history
     -- added bootstrapping training estimator
     -- added ability to select the type of estimator for rain tuning
     -- re-organized the 'train' and 'predict' modules to 'model'
+2018-06-11: Version 0.10.2
+    -- fixed an error in obs retrieval that retrieved one data point too many
+    -- added many plots to 'performance'
 
 """
 
@@ -88,4 +91,4 @@ import model
 import util
 import verification
 
-__version__ = '0.10.0'
+__version__ = '0.10.2'
