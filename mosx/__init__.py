@@ -81,6 +81,8 @@ Version history
 2018-06-11: Version 0.10.2
     -- fixed an error in obs retrieval that retrieved one data point too many
     -- added many plots to 'performance'
+2018-10-22: Version 0.10.3
+    -- added option to write more than one file type
 
 """
 
@@ -91,4 +93,4 @@ import model
 import util
 import verification
 
-__version__ = '0.10.2'
+__version__ = '0.10.3'
