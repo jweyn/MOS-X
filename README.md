@@ -11,7 +11,7 @@ These data, along with surface observations from MesoWest, are used to train any
 - Python 2.7 (no Python 3 yet, and probably ever, because this is a toy project)
 - A workstation with a recent Linux installation... sorry, that's all that will work with the next item...
 - [BUFRgruven](http://strc.comet.ucar.edu/software/bgruven/) - for model data
-- An API key for [MesoWest](https://synopticlabs.org/api/mesonet/) - free and unlimited use
+- An API key for [MesoWest](https://synopticlabs.org/api/mesonet/) - unfortunately the API now has a limited free tier. MOS-X currently does a poor job of data caching so large data sets will exceed the free limit - use with caution.
 - A decent amount of free disk space - some of the models are > 1 GB pickle files... not to mention all the BUFKIT files...
 
 ### Python packages - easier with conda
@@ -25,7 +25,9 @@ These data, along with surface observations from MesoWest, are used to train any
 
 ### Installation
 
-Nothing to do really. Just make sure the scripts in the main directory (`build`, `run`, `verify`, `validate`, and `performance`) are executable.
+Nothing to do really. Just make sure the scripts in the main directory (`build`, `run`, `verify`, `validate`, and `performance`) are executable, for example:
+
+`chmod +x build run verify validate performance`
 
 ## Building a model
 
