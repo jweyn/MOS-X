@@ -24,7 +24,6 @@ from mosx.util import generate_dates, get_array, get_ghcn_stid
 def get_cf6_files(config, num_files=1):
     """
     After code by Luke Madaus
-
     Retrieves CF6 climate verification data released by the NWS. Parameter num_files determines how many recent files
     are downloaded.
     """
@@ -117,13 +116,10 @@ def get_cf6_files(config, num_files=1):
 def _cf6_wind(config):
     """
     After code by Luke Madaus
-
     This function is used internally only.
-
     Generates wind verification values from climate CF6 files stored in SITE_ROOT. These files can be generated
     externally by get_cf6_files.py. This function is not necessary if climo data from _climo_wind is found, except for
     recent values which may not be in the NCDC database yet.
-
     :param config:
     :return: dict: wind values from CF6 files
     """
@@ -166,7 +162,6 @@ def _cf6_wind(config):
 def _climo_wind(config, dates=None):
     """
      Fetches climatological wind data using ulmo package to retrieve NCDC archives.
-
     :param config:
     :param dates: list of datetime objects
     :return: dict: dictionary of wind values
@@ -226,91 +221,120 @@ def categorical_rain(series):
     return new_series
 
 
-def verification(config, output_file=None, use_cf6=True, use_climo=True, force_rain_quantity=False):
+def verification(config, output_file=None, csv_file=None,use_cf6=True, use_climo=True, force_rain_quantity=False):
     """
     Generates verification data from MesoWest and saves to a file, which is used to train the model and check test
     results.
-
     :param config:
     :param output_file: str: path to output file
+    :param csv_file: str: path to csv file containing observations
     :param use_cf6: bool: if True, uses wind values from CF6 files
     :param use_climo: bool: if True, uses wind values from NCDC climatology
     :param force_rain_quantity: if True, returns the actual quantity of rain (rather than POP); useful for validation
     files
     :return:
     """
+
     if output_file is None:
         output_file = '%s/%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'])
 
+    if csv_file is None:
+        csv_file = '%s/%s_verif.csv' % (config['SITE_ROOT'], config['station_id'])
+
     dates = generate_dates(config)
     api_dates = generate_dates(config, api=True, api_add_hour=config['forecast_hour_start'] + 24)
-
-    # Read new data for daily values
-    m = Meso(token=config['meso_token'])
-
-    if config['verbose']:
-        print('verification: MesoPy initialized for station %s' % config['station_id'])
-        print('verification: retrieving latest obs and metadata')
-    latest = m.latest(stid=config['station_id'])
-    obs_list = list(latest['STATION'][0]['SENSOR_VARIABLES'].keys())
-
-    # Look for desired variables
-    vars_request = ['air_temp', 'wind_speed', 'precip_accum_one_hour']
-    vars_option = ['air_temp_low_6_hour', 'air_temp_high_6_hour', 'precip_accum_six_hour']
-
-    # Add variables to the api request if they exist
-    if config['verbose']:
-        print('verification: searching for 6-hourly variables...')
-    for var in vars_option:
-        if var in obs_list:
-            if config['verbose']:
-                print('verification: found variable %s, adding to data' % var)
-            vars_request += [var]
-    vars_api = ''
-    for var in vars_request:
-        vars_api += var + ','
-    vars_api = vars_api[:-1]
-
-    # Units
-    units = 'temp|f,precip|in,speed|kts'
-
-    # Retrieve data
-    obspd = pd.DataFrame()
-    for api_date in api_dates:
-        if config['verbose']:
-            print('verification: retrieving data from %s to %s' % api_date)
-        obs = m.timeseries(stid=config['station_id'], start=api_date[0], end=api_date[1], vars=vars_api, units=units)
-        obspd = pd.concat((obspd, pd.DataFrame.from_dict(obs['STATION'][0]['OBSERVATIONS'])), ignore_index=True)
-
-    # Rename columns to requested vars
-    obs_var_names = obs['STATION'][0]['SENSOR_VARIABLES']
-    obs_var_keys = list(obs_var_names.keys())
-    col_names = list(map(''.join, obspd.columns.values))
-    for c in range(len(col_names)):
-        col = col_names[c]
-        for k in range(len(obs_var_keys)):
-            key = obs_var_keys[k]
-            if col == list(obs_var_names[key].keys())[0]:
-                col_names[c] = key
-    obspd.columns = col_names
-
-    # Make sure we have columns for all requested variables
-    for var in vars_request:
-        if var not in col_names:
-            obspd = obspd.assign(**{var: np.nan})
-
-    # Change datetime column to datetime object, subtract 6 hours to use 6Z days
-    if config['verbose']:
-        print('verification: setting time back %d hours for daily statistics' % config['forecast_hour_start'])
-    dateobj = pd.to_datetime(obspd['date_time']) - timedelta(hours=config['forecast_hour_start'])
-    obspd['date_time'] = dateobj
     datename = 'date_time_minus_%d' % config['forecast_hour_start']
-    obspd = obspd.rename(columns={'date_time': datename})
+
+    if not os.path.exists(csv_file): #no observations saved yet
+        # Read new data for daily values
+        m = Meso(token=config['meso_token'])
+
+        if config['verbose']:
+            print('verification: MesoPy initialized for station %s' % config['station_id'])
+            print('verification: retrieving latest obs and metadata')
+        latest = m.latest(stid=config['station_id'])
+        obs_list = list(latest['STATION'][0]['SENSOR_VARIABLES'].keys())
+
+        # Look for desired variables
+        vars_request = ['air_temp', 'wind_speed', 'precip_accum_one_hour']
+        vars_option = ['air_temp_low_6_hour', 'air_temp_high_6_hour', 'precip_accum_six_hour']
+
+        # Add variables to the api request if they exist
+        if config['verbose']:
+            print('verification: searching for 6-hourly variables...')
+        for var in vars_option:
+            if var in obs_list:
+                if config['verbose']:
+                    print('verification: found variable %s, adding to data' % var)
+                vars_request += [var]
+        vars_api = ''
+        for var in vars_request:
+            vars_api += var + ','
+        vars_api = vars_api[:-1]
+
+        # Units
+        units = 'temp|f,precip|in,speed|kts'
+
+        # Retrieve data
+        obspd = pd.DataFrame()
+        for api_date in api_dates:
+            if config['verbose']:
+                print('verification: retrieving data from %s to %s' % api_date)
+            obs = m.timeseries(stid=config['station_id'], start=api_date[0], end=api_date[1], vars=vars_api, units=units)
+            obspd = pd.concat((obspd, pd.DataFrame.from_dict(obs['STATION'][0]['OBSERVATIONS'])), ignore_index=True)
+
+        # Rename columns to requested vars
+        obs_var_names = obs['STATION'][0]['SENSOR_VARIABLES']
+        obs_var_keys = list(obs_var_names.keys())
+        col_names = list(map(''.join, obspd.columns.values))
+        for c in range(len(col_names)):
+            col = col_names[c]
+            for k in range(len(obs_var_keys)):
+                key = obs_var_keys[k]
+                if col == list(obs_var_names[key].keys())[0]:
+                    col_names[c] = key
+        obspd.columns = col_names
+
+        # Make sure we have columns for all requested variables
+        for var in vars_request:
+            if var not in col_names:
+                obspd = obspd.assign(**{var: np.nan})
+
+        # Change datetime column to datetime object, subtract 6 hours to use 6Z days
+        if config['verbose']:
+            print('verification: setting time back %d hours for daily statistics' % config['forecast_hour_start'])
+        dateobj = pd.to_datetime(obspd['date_time']) - timedelta(hours=config['forecast_hour_start'])
+        obspd['date_time'] = dateobj
+        obspd = obspd.rename(columns={'date_time': datename})
+
+        try:
+            obspd.to_csv(csv_file) #save observations to csv file so avoid fetching more data from MesoWest when calling this function again
+            if config['verbose']:
+                print('verification: saving observations to csv file succeeded')
+            with open('%s/%s_vars_request.txt' % (config['SITE_ROOT'], config['station_id']),'wb') as fp:
+                pickle.dump(vars_request, fp)
+            if config['verbose']:
+                print('verification: saving vars request list to txt file succeeded')
+        except BaseException as e:
+            if config['verbose']:
+                print("verification: warning: '%s' while saving observations or vars request list" % str(e))
+    else: #observations are stored in csv file, so don't fetch more data from MesoWest
+        if config['verbose']:
+            print('verification: obtaining observations from csv file')        
+        obspd = pd.read_csv(csv_file)
+        with open('%s/%s_vars_request.txt' % (config['SITE_ROOT'], config['station_id']),'rb') as fp:
+            vars_request = pickle.load(fp)
 
     # Reformat data into hourly and daily
     # Hourly
     def hour(dates):
         date = dates.iloc[0]
+        if type(date) == str: #if data is from csv file, date will be a string instead of a datetime object
+            #depending on which version of NumPy or pandas you use, the first or second statement will work
+            try:
+                date = datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
+            except:
+                date = datetime.strptime(date, '%Y-%m-%d %H:%M:%S+00:00')
         return datetime(date.year, date.month, date.day, date.hour)
 
     def last(values):
@@ -333,6 +357,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
                                 pd.DatetimeIndex(obspd[datename]).month,
                                 pd.DatetimeIndex(obspd[datename]).day,
                                 pd.DatetimeIndex(obspd[datename]).hour]).agg(aggregate)
+
     # Rename columns
     col_names = obs_hourly.columns.values
     col_names_new = []
@@ -347,6 +372,8 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
     # Daily
     def day(dates):
         date = dates.iloc[0]
+        if type(date) == str: #if data is from csv file, date will be a string instead of a datetime object
+            date = datetime.strptime(date, '%Y-%m-%d %H:%M:%S')
         return datetime(date.year, date.month, date.day)
 
     aggregate[datename] = day
@@ -363,9 +390,9 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
     obs_daily = obs_hourly.groupby([pd.DatetimeIndex(obs_hourly[datename]).year,
                                     pd.DatetimeIndex(obs_hourly[datename]).month,
                                     pd.DatetimeIndex(obs_hourly[datename]).day]).agg(aggregate)
-
     if config['verbose']:
         print('verification: checking matching dates for daily obs and CF6')
+    
     if use_climo:
         try:
             climo_values = _climo_wind(config, dates)
@@ -378,7 +405,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
             print('verification: not using climo.')
         climo_values = {}
     if use_cf6:
-        num_months = min((datetime.utcnow() - dates[0]).days / 30, 24)
+        num_months = min((datetime.utcnow() - dates[0]).days // 30, 24)
         try:
             get_cf6_files(config, num_months)
         except BaseException as e:
@@ -501,7 +528,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
             day_dict = obs_daily.loc[date].to_dict(into=OrderedDict)
         except KeyError:
             continue
-        if np.any(np.isnan(day_dict.values())):
+        if np.any(pd.isnull(day_dict.values())):
             if config['verbose']:
                 print('verification: warning: omitting day %s; missing data' % date)
             continue  # No verification can have missing values
@@ -534,7 +561,6 @@ def process(config, verif):
     """
     Returns a numpy array of verification data for use in mosx_predictors. The first dimension is date, the second is
     variable.
-
     :param config:
     :param verif: dict: dictionary of processed verification data; may be None
     :return: ndarray: array of processed verification targets
@@ -546,10 +572,15 @@ def process(config, verif):
         variables = ['Tmax', 'Tmin', 'Wind', 'Rain']
         day_verif_array = np.full((num_days, len(variables)), np.nan, dtype=np.float64)
         for d in range(len(verif.keys())):
-            date = verif.keys()[d]
+            date = list(verif.keys())[d]
             for v in range(len(variables)):
                 var = variables[v]
-                day_verif_array[d, v] = verif[date][var]
+                if (np.isnan(verif[date][var])): #Use previous day's observations if data is missing. Ideally, fix observations or remove dates with missing data from csv file after detecting such dates.
+                    if config['verbose']:
+                        print("warning: "+str(date)+" is missing data. Using previous day's observations.")
+                    day_verif_array[d, v] = day_verif_array[d-1, v]
+                else:
+                    day_verif_array[d, v] = verif[date][var]
         if config['Model']['predict_timeseries']:
             hour_verif = OrderedDict(verif)
             for date in hour_verif.keys():
