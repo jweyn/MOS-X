@@ -23,7 +23,6 @@ def bufkit_parser_time_height(config, file_name, interval=1, start_dt=None, end_
     By Luke Madaus. Modified by jweyn.
     Returns a dictionary of time-height profiles from a BUFKIT file, with profiles interpolated to a basic set of
     pressure levels.
-
     :param config:
     :param file_name: str: full path to bufkit file name
     :param interval: int: process data every 'interval' hours
@@ -149,7 +148,6 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
     """
     By Luke Madaus. Modified by jweyn.
     Returns a dictionary of surface data from a BUFKIT file.
-
     :param file_name: str: full path to bufkit file name
     :param interval: int: process data every 'interval' hours
     :param start_dt: datetime: starting time for data processing
@@ -290,7 +288,6 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
 def bufr_retrieve(bufr, bufarg):
     """
     Call bufrgruven to retrieve BUFR files.
-
     :param bufr: str: bufrgruven executable path
     :param bufarg: dict: dictionary of arguments passed to bufrgruven
     :return:
@@ -306,7 +303,6 @@ def bufr(config, output_file=None, cycle='18'):
     """
     Generates model data from BUFKIT profiles and saves to a file, which can later be retrieved for either training
     data or model run data.
-
     :param config:
     :param output_file: str: output file path
     :param cycle: str: model cycle (init hour)
@@ -320,8 +316,8 @@ def bufr(config, output_file=None, cycle='18'):
         'cycle': cycle,
         'stations': bufr_station_id.lower(),
         'noascii': '',
-        'nozipit': '',
         'noverbose': '',
+        'nozipit': '',
         'prepend': ''
     }
     if config['verbose']:
@@ -448,7 +444,6 @@ def process(config, bufr, advection_diagnostic=True):
     """
     Imports the data contained in a bufr dictionary and returns a time-by-x numpy array for use in mosx_predictors. The
     first dimension is date; all other dimensions are first extracted using get_array and then one-dimensionalized.
-
     :param config:
     :param bufr: dict: dictionary of processed BUFR data
     :param advection_diagnostic: bool: if True, add temperature advection diagnostic to the data
@@ -457,7 +452,11 @@ def process(config, bufr, advection_diagnostic=True):
     if config['verbose']:
         print('bufr.process: processing array for BUFR data...')
     # PROF part of the BUFR data
-    bufr_prof = get_array(bufr['PROF'])
+    items = list(bufr.items())
+    for item in items: #item = (key, value) pair
+        if item[0] == b'PROF': #look for 'BUFR' key
+            bufr_prof = item[1]
+    bufr_prof = get_array(bufr_prof)
     bufr_dims = list(range(len(bufr_prof.shape)))
     bufr_dims[0] = 1
     bufr_dims[1] = 0
@@ -466,7 +465,10 @@ def process(config, bufr, advection_diagnostic=True):
     bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
     bufr_prof = bufr_prof.reshape(tuple(bufr_reshape))
     # SFC part of the BUFR data
-    bufr_sfc = get_array(bufr['SFC'])
+    for item in items: #item = (key, value) pair
+        if item[0] == b'SFC': #look for 'SFC' key
+            bufr_sfc = item[1]
+    bufr_sfc = get_array(bufr_sfc)
     bufr_dims = list(range(len(bufr_sfc.shape)))
     bufr_dims[0] = 1
     bufr_dims[1] = 0
@@ -475,7 +477,10 @@ def process(config, bufr, advection_diagnostic=True):
     bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
     bufr_sfc = bufr_sfc.reshape(tuple(bufr_reshape))
     # DAY part of the BUFR data
-    bufr_day = get_array(bufr['DAY'])
+    for item in items: #item = (key, value) pair
+        if item[0] == b'DAY': #look for 'DAY' key
+            bufr_day = item[1]
+    bufr_day = get_array(bufr_day)
     bufr_dims = list(range(len(bufr_day.shape)))
     bufr_dims[0] = 1
     bufr_dims[1] = 0
@@ -499,16 +504,18 @@ def temp_advection(bufr):
     between the lowest two profile levels retained in the bufr dictionary. Searches for UWND and VWND keys.
     IMPORTANT: expects the keys of each model to match dates; i.e., expects bufr output from find_matching_dates. This
     is to ensure num_samples is correct.
-
     :param bufr: dict: dictionary of processed BUFR data
     :return: advection_array: array of num_samples-by-num_features of advection diagnostic
     """
-    bufr_prof = bufr['PROF']
-    models = bufr_prof.keys()
+    items = list(bufr.items())
+    for item in items: #item = (key, value) tuple
+        if item[0] == b'PROF': #look for 'PROF' key
+            bufr_prof = item[1]
+    models = list(bufr_prof.keys())
     num_models = len(models)
-    dates = bufr_prof[bufr_prof.keys()[0]].keys()
+    dates = list(bufr_prof[list(bufr_prof.keys())[0]].keys())
     num_dates = len(dates)
-    num_times = len(bufr_prof[bufr_prof.keys()[0]][dates[0]].keys())
+    num_times = len(bufr_prof[list(bufr_prof.keys())[0]][dates[0]].keys())
     num_features = num_models * num_times
 
     advection_array = np.zeros((num_dates, num_features))
@@ -530,17 +537,24 @@ def temp_advection(bufr):
     for date in dates:
         feature = 0
         for model in models:
-            for eval_date in bufr_prof[model][date].keys():
-                u = bufr_prof[model][date][eval_date]['UWND']
-                v = bufr_prof[model][date][eval_date]['VWND']
-                try:
-                    V1 = np.array([u[0], v[0]])
-                    V2 = np.array([u[1], v[1]])
-                except IndexError:
-                    print('Not enough wind levels available for advection calculation; omitting...')
-                    return
-                advection_array[sample, feature] = advection_index(V1, V2)
-                feature += 1
+            try:
+                for eval_date in bufr_prof[model][date].keys():
+                    items = bufr_prof[model][date][eval_date].items()
+                    for item in items: #item = (key, value) tuple
+                        if item[0] == b'UWND': #look for 'UWND' key
+                            u = item[1]
+                        if item[0] == b'VWND': #look for 'VWND' key
+                            v = item[1]
+                    try:
+                        V1 = np.array([u[0], v[0]])
+                        V2 = np.array([u[1], v[1]])
+                    except IndexError:
+                        print('Not enough wind levels available for advection calculation; omitting...')
+                        return
+                    advection_array[sample, feature] = advection_index(V1, V2)
+                    feature += 1
+            except KeyError: #date doesn't exist
+                pass
         sample += 1
 
     return advection_array
