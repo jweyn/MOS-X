@@ -1,4 +1,3 @@
-#!/usr/bin/env python2
 #
 # Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
 #
@@ -41,6 +40,7 @@ config = mosx.util.get_config(config_file)
 bufr_file = '%s/%s_bufr_train.pkl' % (config['SITE_ROOT'], config['station_id'])
 obs_file = '%s/%s_obs_train.pkl' % (config['SITE_ROOT'], config['station_id'])
 verif_file = '%s/%s_verif_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+csv_file = '%s/%s_verif_train.csv' % (config['SITE_ROOT'], config['station_id'])
 predictor_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
 
 
@@ -65,9 +65,9 @@ if not use_existing:
 
     print('\n--- MOS-X build: retrieving VERIF data...\n')
     if config['Obs']['use_climo_wind']:
-        mosx.verification.verification(config, verif_file)
+        mosx.verification.verification(config, verif_file, csv_file)
     else:
-        mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=False)
+        mosx.verification.verification(config, verif_file, csv_file, use_climo=False, use_cf6=False)
 
 # Re-format predictors even if using existing raw data
 print('\n--- MOS-X build: formatting predictor and target data...\n')
@@ -103,3 +103,4 @@ for t in range(num_test):
     print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[t, :4]))
     print('  while the verification was')
     print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(expected[t, :4]))
+

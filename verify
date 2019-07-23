@@ -1,4 +1,3 @@
-#!/usr/bin/env python2
 #
 # Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
 #
@@ -14,7 +13,7 @@ import sys
 import os
 import numpy as np
 import pandas as pd
-from urllib import urlopen
+from urllib.request import urlopen
 from collections import OrderedDict
 from optparse import OptionParser
 from datetime import datetime, timedelta
@@ -196,12 +195,13 @@ else:
 
 if not options.no_verif_flag:
     verif_file = '%s/%s_verify_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    csv_file = '%s/%s_verify_%s_verif.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date
     print('\n--- MOS-X verify: retrieving VERIF data...\n')
     if os.path.isfile(verif_file) and not options.overwrite:
         print('Using existing verif file %s' % verif_file)
         print('If issues occur, delete this file and try again')
     else:
-        mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=config['Obs']['use_climo_wind'])
+        mosx.verification.verification(config, verif_file, csv_file, use_climo=False, use_cf6=config['Obs']['use_climo_wind'])
     with open(verif_file, 'rb') as handle:
         verif = pickle.load(handle)
 else:
@@ -242,14 +242,14 @@ if options.mos_flag:
         daily = retrieve_mos('GFS', init_date, current_date)
         if daily is not None:
             gfs[current_date] = daily
-            mos_array[0, :] = daily.values()
+            mos_array[0, :] = np.array(list(daily.values()))
 
         # NAM
         print('Retrieving %s data initialized at %s' % ('NAM MOS', init_date))
         daily = retrieve_mos('NAM', init_date, current_date)
         if daily is not None:
             nam[current_date] = daily
-            mos_array[1, :] = daily.values()
+            mos_array[1, :] = np.array(list(daily.values()))
 
         # Ensemble mean
         mos_array = np.nanmean(mos_array, axis=0)
@@ -305,9 +305,9 @@ if options.write_flag:
     
     with open(options.write_file, 'w') as f:
         if options.mos_flag:
-            print >> f, 'date,verification,GFS MOS,NAM MOS,MOS MEAN,MOS-X'
+            print('date,verification,GFS MOS,NAM MOS,MOS MEAN,MOS-X',file=f)
         else:
-            print >> f, 'date,verification,MOS-X'
+            print('date,verification,MOS-X',file=f)
         for day in range(len(all_dates)):
             date = all_dates[day]
             if not options.no_verif_flag:
@@ -328,6 +328,7 @@ if options.write_flag:
                     mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
                 except KeyError:
                     mos_mean_str = ''
-                print >> f, '%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str)
+                print('%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str),file=f)
             else:
-                print >>f, '%s,%s,%s' % (date, verif_str, mosx_str)
+                print('%s,%s,%s' % (date, verif_str, mosx_str),file=f)
+
