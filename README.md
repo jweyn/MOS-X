@@ -16,9 +16,9 @@ These data, along with surface observations from MesoWest, are used to train any
 
 ### Python packages - easier with conda
 
-- NumPy
+- NumPy (tested on version 1.16.4)
 - scipy
-- pandas
+- pandas (tested on version 0.24.2)
 - ConfigObj (and validate)
 - ulmo (use conda-forge)
 - the excellent [scikit-learn](http://scikit-learn.org/stable/index.html)
