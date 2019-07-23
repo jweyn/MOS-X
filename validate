@@ -73,21 +73,22 @@ else:
     mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
 obs_file = '%s/%s_CV_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+obs_csv_file = '%s/%s_CV_%s_obs.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X validate: retrieving OBS data...\n')
 if os.path.isfile(obs_file) and not overwrite:
     print('Using existing obs file %s' % obs_file)
     print('If issues occur, delete this file and try again')
 else:
-    mosx.obs.obs(config, obs_file, use_nan_sounding=False)
+    mosx.obs.obs(config, obs_file, obs_csv_file, use_nan_sounding=False)
 
 verif_file = '%s/%s_CV_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-csv_file = '%s/%s_CV_%s_verif.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+verif_csv_file = '%s/%s_CV_%s_verif.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X validate: retrieving VERIF data...\n')
 if os.path.isfile(verif_file) and not overwrite:
     print('Using existing verif file %s' % verif_file)
     print('If issues occur, delete this file and try again')
 else:
-    mosx.verification.verification(config, verif_file, csv_file, use_climo=config['Obs']['use_climo_wind'],
+    mosx.verification.verification(config, verif_file, verif_csv_file, use_climo=config['Obs']['use_climo_wind'],
                                    use_cf6=config['Obs']['use_climo_wind'])
 with open(verif_file, 'rb') as handle:
     verif = pickle.load(handle)
