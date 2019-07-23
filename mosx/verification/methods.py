@@ -312,7 +312,7 @@ def verification(config, output_file=None, csv_file=None,use_cf6=True, use_climo
             if config['verbose']:
                 print('verification: saving observations to csv file succeeded')
             with open('%s/%s_vars_request.txt' % (config['SITE_ROOT'], config['station_id']),'wb') as fp:
-                pickle.dump(vars_request, fp)
+                pickle.dump(vars_request, fp, protocol=2)
             if config['verbose']:
                 print('verification: saving vars request list to txt file succeeded')
         except BaseException as e:
@@ -552,7 +552,7 @@ def verification(config, output_file=None, csv_file=None,use_cf6=True, use_climo
             day_dict.update(series_dict)
         export_dict[date] = day_dict
     with open(output_file, 'wb') as handle:
-        pickle.dump(export_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(export_dict, handle, protocol=2)
 
     return
 
