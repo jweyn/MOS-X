@@ -14,6 +14,7 @@ import mosx.obs
 import mosx.verification
 from mosx.util import unpickle, find_matching_dates
 import pickle
+import pandas as pd
 
 
 class PredictorDict(dict):
@@ -32,7 +33,7 @@ class PredictorDict(dict):
         :param rain_array:
         :return:
         """
-        rain_array[np.isnan(rain_array)] = 0.
+        rain_array[pd.isnull(rain_array)] = 0.
 
         if 'BUFKIT' in self.keys():
             if isinstance(self['BUFKIT'], np.ndarray):
@@ -41,12 +42,10 @@ class PredictorDict(dict):
                                      (rain_array.shape[0], self['BUFKIT'].shape[0]))
         self.rain = rain_array
 
-
 def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None, return_dates=False):
     """
     Generates a complete date-by-x array of data for ingestion into the machine learning estimator. verif_file may be
     None if creating a set to run the model.
-
     :param config:
     :param bufr_file: str: full path to the saved file of BUFR data
     :param obs_file: str: full path to the saved file of OBS data
@@ -72,8 +71,15 @@ def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None,
     precip_list = []
     for date in all_dates:
         precip = []
-        for model in bufr['DAY'].keys():
-            precip.append(bufr['DAY'][model][date][-1] / 25.4)  # mm to inches
+        items = list(bufr.items())
+        for item in items: #item = (key, value) pair
+            if item[0] == b'DAY': #look for 'DAY' key
+                bufr_day = item[1]
+        for model in bufr_day.keys():
+            try:
+                precip.append(bufr_day[model][date][-1] / 25.4)  # mm to inches
+            except KeyError: #date doesn't exist
+                pass
         precip_list.append(precip)
     export_dict.add_rain(np.array(precip_list))
 
