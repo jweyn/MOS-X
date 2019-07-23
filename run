@@ -173,7 +173,7 @@ if write_flag:
                 data[verif_date].update(predicted_timeseries.to_dict(into=OrderedDict))
 
             with open(write_file, 'wb') as handle:
-                pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(data, handle, protocol=2)
 
         elif file_type == 'uw_text':
             write_file = 'MOS-X.%s' % new_end_date
