@@ -39,8 +39,9 @@ config = mosx.util.get_config(config_file)
 
 bufr_file = '%s/%s_bufr_train.pkl' % (config['SITE_ROOT'], config['station_id'])
 obs_file = '%s/%s_obs_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+obs_csv_file = '%s/%s_obs_train.csv' % (config['SITE_ROOT'], config['station_id'])
 verif_file = '%s/%s_verif_train.pkl' % (config['SITE_ROOT'], config['station_id'])
-csv_file = '%s/%s_verif_train.csv' % (config['SITE_ROOT'], config['station_id'])
+verif_csv_file = '%s/%s_verif_train.csv' % (config['SITE_ROOT'], config['station_id'])
 predictor_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
 
 
@@ -51,7 +52,7 @@ def get_bufr():
 
 def get_obs():
     print('\n--- MOS-X build: initiating OBS data retrieval...\n')
-    mosx.obs.obs(config, obs_file)
+    mosx.obs.obs(config, obs_file, obs_csv_file)
 
 
 if not use_existing:
@@ -65,9 +66,9 @@ if not use_existing:
 
     print('\n--- MOS-X build: retrieving VERIF data...\n')
     if config['Obs']['use_climo_wind']:
-        mosx.verification.verification(config, verif_file, csv_file)
+        mosx.verification.verification(config, verif_file, verif_csv_file)
     else:
-        mosx.verification.verification(config, verif_file, csv_file, use_climo=False, use_cf6=False)
+        mosx.verification.verification(config, verif_file, verif_csv_file, use_climo=False, use_cf6=False)
 
 # Re-format predictors even if using existing raw data
 print('\n--- MOS-X build: formatting predictor and target data...\n')
