@@ -90,7 +90,7 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
         # Save
         if save and not nan_sounding:
             with open(sndg_file, 'wb') as handle:
-                pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(data, handle, protocol=2)
 
     return data
 
@@ -117,7 +117,7 @@ def get_obs_hourly(config, api_dates, vars_api, units):
         obs = m.timeseries(stid=config['station_id'], start=api_date[0], end=api_date[1], vars=vars_api, units=units,
                            hfmetars='0')
         obspd = pd.DataFrame.from_dict(obs['STATION'][0]['OBSERVATIONS'])
-        
+
         # Rename columns to requested vars
         obs_var_names = obs['STATION'][0]['SENSOR_VARIABLES']
         obs_var_keys = list(obs_var_names.keys())
@@ -151,6 +151,7 @@ def get_obs_hourly(config, api_dates, vars_api, units):
         if config['verbose']:
             print('get_obs_hourly: finding hourly data...')
         obs_hourly = obspd[pd.DatetimeIndex(obspd[datename]).minute == minute_mode]
+        obs_hourly.date_time = pd.to_datetime(obs_hourly[datename].values)
         obs_hourly = obs_hourly.set_index(datename)
 
         # May not have precip if none is recorded
@@ -166,12 +167,12 @@ def get_obs_hourly(config, api_dates, vars_api, units):
         obs_hourly = obs_hourly[~obs_hourly.index.duplicated(keep='last')]
 
         # Re-index by hourly. Fills missing with NaNs. Try to interpolate the NaNs.
+
         expected_start = datetime.strptime(api_date[0], '%Y%m%d%H%M').replace(minute=minute_mode)
         expected_end = datetime.strptime(api_date[1], '%Y%m%d%H%M')
         expected_times = pd.date_range(expected_start, expected_end, freq='H').to_pydatetime()
         obs_hourly = obs_hourly.reindex(expected_times)
         obs_hourly = obs_hourly.interpolate(limit=3)
-
         obs_final = pd.concat((obs_final, obs_hourly))
 
     # Remove any duplicate rows from concatenation
@@ -189,7 +190,11 @@ def reindex_hourly(df, start, end, interval, end_23z=False, use_rain_max=False):
     else:
         new_end = end
     period = pd.date_range(start, end, freq='%dH' % interval)
+
     # Create a column with the new index an ob falls into
+    if type(df.index.values[0]) == np.int64: #observations from csv file
+        df.date_time=np.array([datetime.strptime(date, '%Y-%m-%d %H:%M:%S') for date in df['date_time'].values],dtype='datetime64')
+        df.set_index('date_time',inplace=True)
     df['period'] = (df.index.values > period.values[..., np.newaxis]).sum(0)
     df['DateTime'] = df.index.values
     aggregate = OrderedDict()
@@ -202,22 +207,23 @@ def reindex_hourly(df, start, end, interval, end_23z=False, use_rain_max=False):
                 aggregate[col] = np.max
             else:
                 aggregate[col] = np.sum
+
     df_reindex = df.loc[start:new_end].groupby('period').agg(aggregate)
     try:
         df_reindex = df_reindex.drop('period', axis=1)
     except (ValueError, KeyError):
         pass
     df_reindex = df_reindex.set_index('DateTime')
-
     return df_reindex
 
 
-def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=False, use_existing_sounding=True):
+def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_nan_sounding=False, use_existing_sounding=True):
     """
     Generates observation data from MesoWest and UCAR soundings and saves to a file, which can later be retrieved for
     either training data or model run data.
     :param config:
     :param output_file: str: output file path
+    :param csv_file: str: path to csv file containing observations
     :param num_hours: int: number of hours to retrieve obs
     :param interval: int: retrieve obs every 'interval' hours
     :param use_nan_sounding: bool: if True, uses a sounding of NaNs rather than omitting a day if sounding is missing
@@ -226,6 +232,9 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
     """
     if output_file is None:
         output_file = '%s/%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'])
+        
+    if csv_file is None:
+        csv_file = '%s/%s_obs.csv' % (config['SITE_ROOT'], config['station_id'])
 
     start_date = datetime.strptime(config['data_start_date'], '%Y%m%d') - timedelta(hours=num_hours)
     dates = generate_dates(config)
@@ -245,7 +254,19 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
     units = 'temp|f,precip|in,speed|kts'
 
     # Retrieve station data
-    obs_hourly = get_obs_hourly(config, api_dates, vars_api, units)
+    if not os.path.exists(csv_file): #no observations saved yet
+        obs_hourly = get_obs_hourly(config, api_dates, vars_api, units)
+        try:
+            obs_hourly.to_csv(csv_file)
+            if config['verbose']:
+                print('obs: saving observations to csv file succeeded')
+        except BaseException as e:
+            if config['verbose']:
+                print("obs: warning: '%s' while saving observations" % str(e))
+    else:
+        if config['verbose']:
+            print('obs: obtaining observations from csv file')        
+        obs_hourly = pd.read_csv(csv_file)
 
     # Retrieve upper-air sounding data
     if config['verbose']:
@@ -285,7 +306,7 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
     if config['verbose']:
         print('obs: -> exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
-        pickle.dump(obs_export, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(obs_export, handle, protocol=2)
 
     return
 
