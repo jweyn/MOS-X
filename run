@@ -85,8 +85,9 @@ print('Using model cycle %sZ' % cycle)
 mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
 obs_file = '%s/%s_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+obs_csv_file = '%s/%s_%s_obs.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X run: retrieving OBS data...\n')
-mosx.obs.obs(config, obs_file, use_nan_sounding=True, use_existing_sounding=False)
+mosx.obs.obs(config, obs_file, obs_csv_file, use_nan_sounding=True, use_existing_sounding=False)
 
 
 # Format data
