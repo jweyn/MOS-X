@@ -24,7 +24,6 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
     """
     Retrieves upper-air data and interpolates to pressure levels. If use_nan_sounding is True, then if a retrieval
     error occurs, a blank sounding will be returned instead of an error.
-
     :param config:
     :param date: datetime
     :param use_nan_sounding: bool: if True, use sounding of NaNs instead of raising an error
@@ -100,7 +99,6 @@ def get_obs_hourly(config, api_dates, vars_api, units):
     """
     Retrieve hourly obs data in a pd dataframe. In order to ensure that there is no missing hourly indices, use
     dataframe.reindex on each retrieved dataframe.
-
     :param api_dates: dates from generate_dates
     :param vars_api: str: string formatted for api call var parameter
     :param units: str: string formatted for api call units parameter
@@ -119,7 +117,7 @@ def get_obs_hourly(config, api_dates, vars_api, units):
         obs = m.timeseries(stid=config['station_id'], start=api_date[0], end=api_date[1], vars=vars_api, units=units,
                            hfmetars='0')
         obspd = pd.DataFrame.from_dict(obs['STATION'][0]['OBSERVATIONS'])
-
+        
         # Rename columns to requested vars
         obs_var_names = obs['STATION'][0]['SENSOR_VARIABLES']
         obs_var_keys = list(obs_var_names.keys())
@@ -178,7 +176,6 @@ def get_obs_hourly(config, api_dates, vars_api, units):
 
     # Remove any duplicate rows from concatenation
     obs_final = obs_final[~obs_final.index.duplicated(keep='last')]
-
     return obs_final
 
 
@@ -219,7 +216,6 @@ def obs(config, output_file=None, num_hours=24, interval=3, use_nan_sounding=Fal
     """
     Generates observation data from MesoWest and UCAR soundings and saves to a file, which can later be retrieved for
     either training data or model run data.
-
     :param config:
     :param output_file: str: output file path
     :param num_hours: int: number of hours to retrieve obs
@@ -298,7 +294,6 @@ def process(config, obs):
     """
     Returns a numpy array of obs for use in mosx_predictors. The first dimension is date; all other dimensions are
     serialized.
-
     :param config:
     :param obs: dict: dictionary of processed obs data
     :return:
@@ -309,7 +304,7 @@ def process(config, obs):
     # Surface observations
     sfc = obs['SFC']
     num_days = len(sfc.keys())
-    variables = sorted(sfc[sfc.keys()[0]].keys())
+    variables = sorted(sfc[list(sfc.keys())[0]].keys())
     sfc_array = get_array(sfc)
     sfc_array_r = np.reshape(sfc_array, (num_days, -1))
 
