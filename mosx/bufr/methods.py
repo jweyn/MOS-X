@@ -435,7 +435,7 @@ def bufr(config, output_file=None, cycle='18'):
     if config['verbose']:
         print('bufr: -> exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
-        pickle.dump(bufr_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(bufr_dict, handle, protocol=2)
 
     return
 
