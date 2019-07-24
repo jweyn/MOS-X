@@ -362,8 +362,6 @@ def bufr(config, output_file=None, cycle='18'):
                         bufr_retrieve(bufrgruven, bufarg)
                         bufr_name = bufr_format % (bufr_default_dir, bufarg['date'], '%02d' % int(bufarg['cycle']),
                                                    model, bufarg['stations'])
-                        bufr_file = open(bufr_name)
-                        bufr_file.close()
                         os.rename(bufr_name, bufr_new_name)
                         if config['verbose']:
                             print('bufr: BUFR file found for %s at date %s.' % (model, bufarg['date']))
@@ -379,8 +377,6 @@ def bufr(config, output_file=None, cycle='18'):
                     bufr_retrieve(bufrgruven, bufarg)
                     bufr_name = bufr_format % (bufr_default_dir, bufarg['date'], '%02d' % int(bufarg['cycle']),
                                                bufarg['dset'], bufarg['stations'])
-                    bufr_file = open(bufr_name)
-                    bufr_file.close()
                     os.rename(bufr_name, bufr_new_name)
                     if config['verbose']:
                         print('bufr: BUFR file found for %s at date %s.' % (model, bufarg['date']))
