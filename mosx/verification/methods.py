@@ -528,7 +528,7 @@ def verification(config, output_file=None, csv_file=None,use_cf6=True, use_climo
             day_dict = obs_daily.loc[date].to_dict(into=OrderedDict)
         except KeyError:
             continue
-        if np.any(pd.isnull(day_dict.values())):
+        if np.any(np.isnan(list(day_dict.values()))):
             if config['verbose']:
                 print('verification: warning: omitting day %s; missing data' % date)
             continue  # No verification can have missing values
@@ -575,12 +575,7 @@ def process(config, verif):
             date = list(verif.keys())[d]
             for v in range(len(variables)):
                 var = variables[v]
-                if (np.isnan(verif[date][var])): #Use previous day's observations if data is missing. Ideally, fix observations or remove dates with missing data from csv file after detecting such dates.
-                    if config['verbose']:
-                        print("warning: "+str(date)+" is missing data. Using previous day's observations.")
-                    day_verif_array[d, v] = day_verif_array[d-1, v]
-                else:
-                    day_verif_array[d, v] = verif[date][var]
+                day_verif_array[d, v] = verif[date][var]
         if config['Model']['predict_timeseries']:
             hour_verif = OrderedDict(verif)
             for date in hour_verif.keys():
