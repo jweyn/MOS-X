@@ -13,12 +13,15 @@ the base sklearn estimator class.
 """
 
 import numpy as np
+import sys, os
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import LabelBinarizer
+from sklearn.preprocessing import Imputer
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import KFold, train_test_split
 from copy import deepcopy
-from .util import get_object
+from util import get_object
 
 
 class TimeSeriesEstimator(object):
@@ -51,7 +54,6 @@ class TimeSeriesEstimator(object):
     def fit(self, predictor_array, verification_array, **kwargs):
         """
         Fit both the daily and the timeseries estimators.
-
         :param predictor_array: ndarray-like: predictor features
         :param verification_array: ndarray-like: truth values
         :param kwargs: kwargs passed to fit methods
@@ -68,7 +70,6 @@ class TimeSeriesEstimator(object):
         """
         Predict from both the daily and timeseries estimators. Returns an array if self.array_form is True,
         otherwise returns a dictionary (not implemented yet).
-
         :param predictor_array: num_samples x num_features
         :param kwargs: kwargs passed to predict methods
         :return: array or dictionary of predicted values
@@ -88,7 +89,6 @@ class RainTuningEstimator(object):
     def __init__(self, estimator, rain_estimator='ensemble.RandomForestRegressor', **kwargs):
         """
         Initialize an instance of an estimator with a rainfall post-processor.
-
         :param estimator: sklearn estimator or TimeSeriesEstimator with an estimators_ attribute
         :param rain_estimator: str: type of sklearn estimator to use for rain processing
         :param kwargs: passed to sklearn rain estimator
@@ -102,12 +102,12 @@ class RainTuningEstimator(object):
         for attr in self.base_estimator.__dict__.keys():
             try:
                 setattr(self, attr, getattr(self.base_estimator, attr))
-            except AttributeError:
-                pass
+            except AttributeError as e:
+                print("warning: ",e)
         try:
             self.estimators_ = self.base_estimator.estimators_
-        except AttributeError:
-            pass
+        except AttributeError as e:
+            print("warning: ",e)
         self.rain_estimator_name = rain_estimator
         self.is_classifier = ('Classifi' in self.rain_estimator_name)
         Regressor = get_object('sklearn.%s' % rain_estimator)
@@ -146,7 +146,7 @@ class RainTuningEstimator(object):
                 Xs = X[s].reshape(1, -1)
                 for t in range(num_trees):
                     try:
-                        predicted_rain[s, t] = self._forest.estimators_[t].predict(Xs)
+                        predicted_rain[s, t] = self._forest.estimators_[t].predict(Xs)[0,3]
                     except AttributeError:
                         # Work around an error in sklearn where GBTrees have length-1 ndarrays...
                         predicted_rain[s, t] = self._forest.estimators_[t][0].predict(Xs)
@@ -162,7 +162,6 @@ class RainTuningEstimator(object):
     def fit(self, predictor_array, verification_array, rain_array=None, **kwargs):
         """
         Fit the estimator and the post-processor.
-
         :param predictor_array: ndarray-like: predictor features
         :param verification_array: ndarray-like: truth values
         :param rain_array: ndarray-like: raw rain from the models
@@ -170,6 +169,7 @@ class RainTuningEstimator(object):
         :return:
         """
         # First, fit the estimator as usual
+        
         self.base_estimator.fit(predictor_array, verification_array, **kwargs)
 
         # Now generate the distribution information from the individual trees in the forest
@@ -178,6 +178,7 @@ class RainTuningEstimator(object):
         predicted_rain = self._get_tree_rain_prediction(predictor_array)
         rain_distribution = self._get_distribution(predicted_rain)
         # If raw rain values are given, add those to the distribution
+        
         if rain_array is not None:
             rain_distribution = np.concatenate((rain_distribution, rain_array), axis=1)
 
@@ -195,7 +196,6 @@ class RainTuningEstimator(object):
     def predict(self, predictor_array, rain_tuning=True, rain_array=None, **kwargs):
         """
         Return a prediction from the estimator with post-processed rain.
-
         :param predictor_array: ndarray-like: predictor features
         :param rain_tuning: bool: toggle option to disable rain tuning in prediction
         :param rain_array: ndarray-like: raw rain values from models. Must be provided if fit() was called using raw
@@ -224,7 +224,6 @@ class RainTuningEstimator(object):
         """
         Return a prediction from the estimator with post-processed rain, with a probability of rainfall. Should only
         be used if rain_forecast_type is 'pop'.
-
         :param predictor_array: ndarray-like: predictor features
         :param rain_tuning: bool: toggle option to disable rain tuning in prediction
         :param rain_array: ndarray-like: raw rain values from models. Must be provided if fit() was called using raw
@@ -316,7 +315,6 @@ class BootStrapEnsembleEstimator(object):
     def fit(self, predictor_array, verification_array, **kwargs):
         """
         Fit the bootstrapped algorithms.
-
         :param predictor_array: ndarray-like: predictor features
         :param verification_array: ndarray-like: truth values
         :param kwargs: kwargs passed to fit methods
@@ -331,7 +329,6 @@ class BootStrapEnsembleEstimator(object):
     def predict(self, predictor_array, **kwargs):
         """
         Predict from the bootstrapped algorithms. Gives an ensemble mean.
-
         :param predictor_array: ndarray-like: predictor features
         :param kwargs: passed to estimator's 'predict' method
         :return:

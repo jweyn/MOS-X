@@ -1,4 +1,3 @@
-#!/usr/bin/env python2
 #
 # Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
 #
@@ -86,8 +85,9 @@ print('Using model cycle %sZ' % cycle)
 mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
 obs_file = '%s/%s_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+obs_csv_file = '%s/%s_%s_obs.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X run: retrieving OBS data...\n')
-mosx.obs.obs(config, obs_file, use_nan_sounding=True, use_existing_sounding=False)
+mosx.obs.obs(config, obs_file, obs_csv_file, use_nan_sounding=True, use_existing_sounding=False)
 
 
 # Format data
@@ -174,7 +174,7 @@ if write_flag:
                 data[verif_date].update(predicted_timeseries.to_dict(into=OrderedDict))
 
             with open(write_file, 'wb') as handle:
-                pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(data, handle, protocol=2)
 
         elif file_type == 'uw_text':
             write_file = 'MOS-X.%s' % new_end_date

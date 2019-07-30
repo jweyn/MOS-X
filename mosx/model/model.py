@@ -181,7 +181,7 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
         estimator_file = '%s/%s_mosx.pkl' % (config['MOSX_ROOT'], config['station_id'])
     print('train: -> exporting to %s' % estimator_file)
     with open(estimator_file, 'wb') as handle:
-        pickle.dump(estimator, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(estimator, handle, protocol=2)
 
     if test_size > 0:
         return p_test, t_test, r_test

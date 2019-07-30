@@ -1,4 +1,4 @@
-# MOS-X
+# MOS-X (Python 3 version of Jonathan Weyn's original repository)
 
 MOS-X is a machine learning-based forecasting model built in Python designed to produce output tailored for the [WxChallenge](http://www.wxchallenge.com) weather forecasting competition.
 It uses an external executable to download and process time-height profiles of model data from the National Centers for Environmental Prediction (NCEP) Global Forecast System (GFS) and North American Mesoscale (NAM) models.
@@ -8,7 +8,7 @@ These data, along with surface observations from MesoWest, are used to train any
 
 ### Requirements
 
-- Python 2.7 (no Python 3 yet, and probably ever, because this is a toy project)
+- Python 3 (not tested for all functions; feel free to make a pull request for additional fixes. For Python 2 use Jonathan Weyn's original repository)
 - A workstation with a recent Linux installation... sorry, that's all that will work with the next item...
 - [BUFRgruven](http://strc.comet.ucar.edu/software/bgruven/) - for model data
 - An API key for [MesoWest](https://synopticlabs.org/api/mesonet/) - unfortunately the API now has a limited free tier. MOS-X currently does a poor job of data caching so large data sets will exceed the free limit - use with caution.
@@ -16,9 +16,9 @@ These data, along with surface observations from MesoWest, are used to train any
 
 ### Python packages - easier with conda
 
-- NumPy
+- NumPy (tested on version 1.16.4)
 - scipy
-- pandas
+- pandas (tested on version 0.24.2)
 - ConfigObj (and validate)
 - ulmo (use conda-forge)
 - the excellent [scikit-learn](http://scikit-learn.org/stable/index.html)

@@ -1,4 +1,4 @@
-#
+
 # Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
 #
 # See the file LICENSE for your rights.
@@ -38,7 +38,6 @@ def walk_kwargs(section, key):
 def get_config(config_path):
     """
     Retrieve the config object from config_path.
-
     :param config_path: str: full path to config file
     :return:
     """
@@ -139,7 +138,6 @@ def generate_dates(config, api=False, start_date=None, end_date=None, api_add_ho
     tuples split by year in strings formatted for the MesoWest API call. If api is False, then returns a list of all
     dates as datetime objects. start_date and end_date are available as options as certain calls require addition of
     some data for prior days.
-
     :param config:
     :param api: bool: if True, returns dates formatted for MesoWest API call
     :param start_date: str: starting date in config file format (YYYYMMDD)
@@ -201,7 +199,6 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
     """
     Finds dates which match in all three dictionaries. If return_data is True, returns the input dictionaries with only
     common dates retained. verif may be None if running the model.
-
     :param bufr: dict: dictionary of processed BUFR data
     :param obs: dict: dictionary of processed OBS data
     :param verif: dict: dictionary of processed VERIFICATION data
@@ -212,10 +209,12 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
     if verif is not None:
         verif_dates = verif.keys()
     # For BUFR dates, find for all models
-    bufr_dates_list = [bufr['SFC'][key].keys() for key in bufr['SFC'].keys()]
-    bufr_dates = bufr_dates_list[0]
-    for m in range(1, len(bufr_dates_list)):
-        bufr_dates = set(bufr_dates).intersection(set(bufr_dates_list[m]))
+    items = list(bufr.items())
+    for item in items: #item = (key, value) tuple
+        if item[0] == b'SFC': #look for 'SFC' key
+            bufr_sfc = item[1]
+    bufr_dates_list = [bufr_sfc[key].keys() for key in bufr_sfc.keys()]
+    bufr_dates = bufr_dates_list[0] 
     if verif is not None:
         all_dates = (set(verif_dates).intersection(set(obs_dates))).intersection(bufr_dates)
     else:
@@ -224,17 +223,21 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
         raise ValueError('Sorry, no matching dates found in data!')
     print('find_matching_dates: found %d matching dates.' % len(all_dates))
     if return_data:
-        for lev in ['SFC', 'PROF', 'DAY']:
-            for model in bufr[lev].keys():
-                for date in bufr[lev][model].keys():
+        for lev in [b'SFC', b'PROF', b'DAY']:
+            items = list(bufr.items())
+            for item in items: #item = (key, value) tuple
+                if item[0] == lev: #look for lev key
+                    bufr_lev = item[1]
+            for model in bufr_lev.keys():
+                for date in list(bufr_lev[model].keys()):
                     if date not in all_dates:
-                        bufr[lev][model].pop(date, None)
-        for date in obs_dates:
+                        bufr_lev[model].pop(date, None)
+        for date in list(obs_dates):
             if date not in all_dates:
                 obs['SFC'].pop(date, None)
                 obs['SNDG'].pop(date, None)
         if verif is not None:
-            for date in verif_dates:
+            for date in list(verif_dates):
                 if date not in all_dates:
                     verif.pop(date, None)
         return bufr, obs, verif, sorted(list(all_dates))
@@ -247,7 +250,6 @@ def get_array(dictionary):
     Transforms a nested dictionary into an nd numpy array, assuming that each nested sub-dictionary has the same
     structure and that the values elements of the innermost dictionary is either a list or a float value. Function
     _get_array is its recursive sub-function.
-
     :param dictionary:
     :return:
     """
@@ -255,7 +257,7 @@ def get_array(dictionary):
     d = dictionary
     while isinstance(d, dict):
         dim_list.append(len(d.keys()))
-        d = d.values()[0]
+        d = list(d.values())[0]
     try:
         dim_list.append(len(d))
     except:
@@ -268,10 +270,10 @@ def get_array(dictionary):
 def _get_array(dictionary, out_array):
     if dictionary == {}:  # in case there's an empty dict for any reason
         return
-    if isinstance(dictionary.values()[0], list):
+    if isinstance(list(dictionary.values())[0], list):
         for i, L in enumerate(dictionary.values()):
             out_array[i, :] = np.asarray(L)
-    elif isinstance(dictionary.values()[0], float):
+    elif isinstance(list(dictionary.values())[0], float):
         for i, L in enumerate(dictionary.values()):
             out_array[i] = L
     else:
@@ -282,22 +284,21 @@ def _get_array(dictionary, out_array):
 def unpickle(bufr_file, obs_file, verif_file):
     """
     Shortcut function to unpickle bufr, obs, and verif files all at once. verif_file may be None if running the model.
-
     :param bufr_file: str: full path to pickled BUFR data file
     :param obs_file: str: full path to pickled OBS data file
     :param verif_file: str: full path to pickled VERIFICATION data file
     :return:
     """
     print('util: loading BUFKIT data from %s' % bufr_file)
-    with open(bufr_file, 'rb') as handle:
-        bufr = pickle.load(handle)
+    handle = open(bufr_file, 'rb')
+    bufr = pickle.load(handle, encoding='bytes')
     print('util: loading OBS data from %s' % obs_file)
-    with open(obs_file, 'rb') as handle:
-        obs = pickle.load(handle)
+    handle = open(obs_file, 'rb')
+    obs = pickle.load(handle, encoding='bytes')
     if verif_file is not None:
         print('util: loading VERIFICATION data from %s' % verif_file)
-        with open(verif_file, 'rb') as handle:
-            verif = pickle.load(handle)
+        handle = open(verif_file, 'rb')
+        verif = pickle.load(handle, encoding='bytes')
     else:
         verif = None
     return bufr, obs, verif
@@ -306,7 +307,6 @@ def unpickle(bufr_file, obs_file, verif_file):
 def get_ghcn_stid(config):
     """
     After code by Luke Madaus.
-
     Gets the GHCN station ID from the 4-letter station ID.
     """
     main_addr = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa'
@@ -319,10 +319,12 @@ def get_ghcn_stid(config):
     if not os.path.exists(stations_filename):
         print('get_ghcn_stid: downloading site name database')
         try:
-            from urllib2 import urlopen
+            from urllib.request import urlopen
             response = urlopen('%s/%s' % (main_addr, stations_file))
-            with open(stations_filename, 'w') as f:
-                f.write(response.read())
+            print('%s/%s' % (main_addr, stations_file))
+            f = open(stations_filename, 'wb')
+            f.write(response.read())
+            f.close()
         except BaseException as e:
             print('get_ghcn_stid: unable to download site name database')
             print("*** Reason: '%s'" % str(e))
@@ -348,7 +350,7 @@ def get_ghcn_stid(config):
                 except:
                     continue
     if len(station_wbans) == 0:
-        raise ValueError('get_ghcn_stid error: so station found for %s' % stid)
+        raise ValueError('get_ghcn_stid error: no station found for %s' % stid)
 
     # Format station as USW...
     usw_format = 'USW000%05d'
@@ -383,7 +385,6 @@ def dewpoint(T, RH):
 
 def to_bool(x):
     """Convert an object to boolean.
-
     Examples:
     >>> print to_bool('TRUE')
     True
@@ -403,7 +404,6 @@ def to_bool(x):
     >>> print to_bool(None)
     Traceback (most recent call last):
     ValueError: Unknown boolean specifier: 'None'.
-
     This function (c) Tom Keffer, weeWX.
     """
     try:
