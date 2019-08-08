@@ -330,6 +330,6 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
     if config['verbose']:
         print('obs: -> exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
-        pickle.dump(obs_export, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(obs_export, handle, protocol=2)
 
     return
