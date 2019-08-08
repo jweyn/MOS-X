@@ -99,6 +99,7 @@ def get_obs_hourly(config, api_dates, vars_api, units):
     """
     Retrieve hourly obs data in a pd dataframe. In order to ensure that there is no missing hourly indices, use
     dataframe.reindex on each retrieved dataframe.
+
     :param api_dates: dates from generate_dates
     :param vars_api: str: string formatted for api call var parameter
     :param units: str: string formatted for api call units parameter
@@ -166,17 +167,17 @@ def get_obs_hourly(config, api_dates, vars_api, units):
         # Remove any duplicate rows
         obs_hourly = obs_hourly[~obs_hourly.index.duplicated(keep='last')]
 
-        # Re-index by hourly. Fills missing with NaNs. Try to interpolate the NaNs.
-
+        # Re-index by hourly. Fills missing with NaNs.
         expected_start = datetime.strptime(api_date[0], '%Y%m%d%H%M').replace(minute=minute_mode)
         expected_end = datetime.strptime(api_date[1], '%Y%m%d%H%M')
         expected_times = pd.date_range(expected_start, expected_end, freq='H').to_pydatetime()
         obs_hourly = obs_hourly.reindex(expected_times)
-        obs_hourly = obs_hourly.interpolate(limit=3)
+        var_list = vars_api.split(',')
         obs_final = pd.concat((obs_final, obs_hourly))
 
     # Remove any duplicate rows from concatenation
     obs_final = obs_final[~obs_final.index.duplicated(keep='last')]
+
     return obs_final
 
 
@@ -190,7 +191,6 @@ def reindex_hourly(df, start, end, interval, end_23z=False, use_rain_max=False):
     else:
         new_end = end
     period = pd.date_range(start, end, freq='%dH' % interval)
-
     # Create a column with the new index an ob falls into
     if type(df.index.values[0]) == np.int64: #observations from csv file
         df.date_time=np.array([datetime.strptime(date, '%Y-%m-%d %H:%M:%S') for date in df['date_time'].values],dtype='datetime64')
@@ -207,13 +207,13 @@ def reindex_hourly(df, start, end, interval, end_23z=False, use_rain_max=False):
                 aggregate[col] = np.max
             else:
                 aggregate[col] = np.sum
-
     df_reindex = df.loc[start:new_end].groupby('period').agg(aggregate)
     try:
         df_reindex = df_reindex.drop('period', axis=1)
     except (ValueError, KeyError):
         pass
     df_reindex = df_reindex.set_index('DateTime')
+
     return df_reindex
 
 
@@ -221,6 +221,7 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
     """
     Generates observation data from MesoWest and UCAR soundings and saves to a file, which can later be retrieved for
     either training data or model run data.
+
     :param config:
     :param output_file: str: output file path
     :param csv_file: str: path to csv file containing observations
@@ -243,6 +244,21 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
     # Look for desired variables
     vars_request = ['air_temp', 'altimeter', 'precip_accum_one_hour', 'relative_humidity',
                     'wind_speed', 'wind_direction']
+    
+    vars_option = ['air_temp_low_6_hour', 'air_temp_high_6_hour', 'precip_accum_six_hour']
+    m = Meso(token=config['meso_token'])
+    latest = m.latest(stid=config['station_id'])
+    obs_list = list(latest['STATION'][0]['SENSOR_VARIABLES'].keys())
+
+    # Add variables to the api request if they exist
+    if config['verbose']:
+        print('obs: searching for 6-hourly variables...')
+    for var in vars_option:
+        if var in obs_list:
+            if config['verbose']:
+                print('obs: found variable %s, adding to data' % var)
+            vars_request += [var]
+    
 
     # Add variables to the api request
     vars_api = ''
@@ -255,19 +271,27 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
 
     # Retrieve station data
     if not os.path.exists(csv_file): #no observations saved yet
-        obs_hourly = get_obs_hourly(config, api_dates, vars_api, units)
+        all_obs_hourly = get_obs_hourly(config, api_dates, vars_api, units)
         try:
-            obs_hourly.to_csv(csv_file)
+            all_obs_hourly.to_csv(csv_file)
             if config['verbose']:
                 print('obs: saving observations to csv file succeeded')
+            with open('%s/%s_obs_vars_request.txt' % (config['SITE_ROOT'], config['station_id']),'wb') as fp:
+                pickle.dump(vars_request, fp, protocol=2)
+            if config['verbose']:
+                print('obs: saving vars request list to txt file succeeded')
         except BaseException as e:
             if config['verbose']:
                 print("obs: warning: '%s' while saving observations" % str(e))
+        obs_hourly = all_obs_hourly[vars_request[0:6]] #subset of data used as predictors
     else:
         if config['verbose']:
-            print('obs: obtaining observations from csv file')        
-        obs_hourly = pd.read_csv(csv_file)
-
+            print('obs: obtaining observations from csv file') 
+        all_obs_hourly = pd.read_csv(csv_file)
+        obs_hourly = all_obs_hourly[['date_time']+vars_request[0:6]] #subset of data used as predictors
+        with open('%s/%s_obs_vars_request.txt' % (config['SITE_ROOT'], config['station_id']),'rb') as fp:
+            vars_request = pickle.load(fp)
+            
     # Retrieve upper-air sounding data
     if config['verbose']:
         print('obs: retrieving upper-air sounding data')
@@ -306,34 +330,6 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
     if config['verbose']:
         print('obs: -> exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
-        pickle.dump(obs_export, handle, protocol=2)
+        pickle.dump(obs_export, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return
-
-
-def process(config, obs):
-    """
-    Returns a numpy array of obs for use in mosx_predictors. The first dimension is date; all other dimensions are
-    serialized.
-    :param config:
-    :param obs: dict: dictionary of processed obs data
-    :return:
-    """
-    if config['verbose']:
-        print('obs.process: processing array for obs data...')
-
-    # Surface observations
-    sfc = obs['SFC']
-    num_days = len(sfc.keys())
-    variables = sorted(sfc[list(sfc.keys())[0]].keys())
-    sfc_array = get_array(sfc)
-    sfc_array_r = np.reshape(sfc_array, (num_days, -1))
-
-    # Sounding observations
-    if config['Obs']['use_soundings']:
-        sndg_array = get_array(obs['SNDG'])
-        # num_days should be the same first dimension
-        sndg_array_r = np.reshape(sndg_array, (num_days, -1))
-        return np.hstack((sfc_array_r, sndg_array_r))
-    else:
-        return sfc_array_r
