@@ -282,7 +282,7 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
         vars_request = pickle.load(fp)
     
     all_obspd = pd.read_csv(csv_file)
-    obspd = all_obspd[['date_time']+[vars_request[0]]+[vars_request[2]]+[vars_request[4]]+vars_request[6:]][6:-18] #subset of data used as verification
+    obspd = all_obspd[['date_time']+[vars_request[0]]+[vars_request[2]]+[vars_request[4]]+vars_request[6:]] #subset of data used as verification
     obspd.date_time=np.array([datetime.strptime(date, '%Y-%m-%d %H:%M:%S') for date in obspd['date_time'].values],dtype='datetime64')
     dateobj = pd.to_datetime(obspd['date_time']) - timedelta(hours=config['forecast_hour_start'])
     obspd['date_time'] = dateobj
@@ -443,11 +443,16 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
             use_cf6_precip = True
         
         # Check for missing or incorrect 6-hour precipitation amounts. If there are any, use sum of 1-hour precipitation amounts if none are missing.
+        skip_date = False
         if not use_cf6_precip:
             if 'precip_accum_six_hour' in vars_request: #6-hour precipitation amounts were used
                 daily_precip = 0.0
                 for hour in [5,11,17,23]: #check the 4 times which should have 6-hour precipitation amounts
-                    obs_6hr_precip = round(obs_hourly_copy['precip_accum_six_hour'][pd.Timestamp(date.year,date.month,date.day,hour)],2)
+                    try:
+                        obs_6hr_precip = round(obs_hourly_copy['precip_accum_six_hour'][pd.Timestamp(date.year,date.month,date.day,hour)],2)
+                    except KeyError: #incomplete data for date
+                        skip_date = True
+                        break
                     if np.isnan(obs_6hr_precip):
                         obs_6hr_precip = 0.0
                     sum_hourly_precip = 0.0
@@ -465,25 +470,33 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
                     obs_daily.loc[index, 'precip_accum_six_hour'] = daily_precip
             else: #1-hour precipitation amounts were used
                 for hour in range(24):
-                    obs_hourly_precip = obs_hourly_copy['precip_accum_one_hour'][pd.Timestamp(date.year,date.month,date.day,hour)]
+                    try:
+                        obs_hourly_precip = obs_hourly_copy['precip_accum_one_hour'][pd.Timestamp(date.year,date.month,date.day,hour)]
+                    except KeyError: #incomplete data for date
+                        skip_date = True
+                        break
                     if np.isnan(obs_hourly_precip):
                         use_cf6_precip = True
-            
-        if date in climo_values.keys():
+        if skip_date:
+            obs_daily.loc[index,max_temp_var] = np.nan
+            obs_daily.loc[index,min_temp_var] = np.nan
+            obs_daily.loc[index,'wind_speed'] = np.nan
+            obs_daily.loc[index,precip_var] = np.nan
+        if date in climo_values.keys() and not skip_date:
             count_rows += 1
             cf6_max_temp = climo_values[date]['max_temp']
             cf6_min_temp = climo_values[date]['min_temp']
             cf6_wind = climo_values[date]['wind']
             cf6_precip = climo_values[date]['precip']
             if not (np.isnan(cf6_max_temp)) and cf6_max_temp > -900.0 and np.isnan(obs_max_temp):
-                print('verification: warning: missing obs max temp for %s, using cf6/climo value of %d' % (date,cf6_max_temp))
+                print('verification: warning: missing obs max temp for %s, using cf6/climo value of %d' % (date,round(cf6_max_temp,0)))
                 obs_daily.loc[index, max_temp_var] = cf6_max_temp
             if not (np.isnan(cf6_min_temp)) and cf6_min_temp < 900.0 and np.isnan(obs_min_temp):
-                print('verification: warning: missing obs min temp for %s, using cf6/climo value of %d' % (date,cf6_min_temp))
+                print('verification: warning: missing obs min temp for %s, using cf6/climo value of %d' % (date,round(cf6_min_temp,0)))
                 obs_daily.loc[index, min_temp_var] = cf6_min_temp
             if not (np.isnan(cf6_wind)):
-                if obs_wind - cf6_wind >= 5:
-                    print('verification: warning: obs wind for %s much larger than wind from cf6/climo; using obs' % 
+                if obs_wind > cf6_wind and obs_wind < cf6_wind + 10:
+                    print('verification: warning: obs wind for %s larger than wind from cf6/climo; using obs' % 
                           date)
                 else:
                     obs_daily.loc[index, 'wind_speed'] = cf6_wind
