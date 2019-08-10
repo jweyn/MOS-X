@@ -444,39 +444,38 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
         
         # Check for missing or incorrect 6-hour precipitation amounts. If there are any, use sum of 1-hour precipitation amounts if none are missing.
         skip_date = False
-        if not use_cf6_precip:
-            if 'precip_accum_six_hour' in vars_request: #6-hour precipitation amounts were used
-                daily_precip = 0.0
-                for hour in [5,11,17,23]: #check the 4 times which should have 6-hour precipitation amounts
-                    try:
-                        obs_6hr_precip = round(obs_hourly_copy['precip_accum_six_hour'][pd.Timestamp(date.year,date.month,date.day,hour)],2)
-                    except KeyError: #incomplete data for date
-                        skip_date = True
-                        break
-                    if np.isnan(obs_6hr_precip):
-                        obs_6hr_precip = 0.0
-                    sum_hourly_precip = 0.0
-                    for hour2 in range(hour-5,hour+1): #check and sum 1-hour precipitation amounts
-                        obs_hourly_precip = obs_hourly_copy['precip_accum_one_hour'][pd.Timestamp(date.year,date.month,date.day,hour2)]
-                        if np.isnan(obs_hourly_precip): #missing 1-hour precipitation amount, so use cf6/climo value instead
-                            use_cf6_precip = True
-                        else:
-                            sum_hourly_precip += round(obs_hourly_precip,2)
-                    if sum_hourly_precip > obs_6hr_precip and not use_cf6_precip: #Missing or incorrect 6-hour precipitation amount but 1-hour precipitation amounts are OK
-                        obs_6hr_precip = round(sum_hourly_precip,2)
-                    daily_precip += round(obs_6hr_precip,2)
-                if (round(daily_precip,2) > round(obs_precip,2) and not use_cf6_precip):
-                    print('verification: warning: incorrect obs precip of %0.2f for %s, using summed one hour accumulation value of %0.2f' % (obs_precip,date,daily_precip))
-                    obs_daily.loc[index, 'precip_accum_six_hour'] = daily_precip
-            else: #1-hour precipitation amounts were used
-                for hour in range(24):
-                    try:
-                        obs_hourly_precip = obs_hourly_copy['precip_accum_one_hour'][pd.Timestamp(date.year,date.month,date.day,hour)]
-                    except KeyError: #incomplete data for date
-                        skip_date = True
-                        break
-                    if np.isnan(obs_hourly_precip):
+        if 'precip_accum_six_hour' in vars_request: #6-hour precipitation amounts were used
+            daily_precip = 0.0
+            for hour in [5,11,17,23]: #check the 4 times which should have 6-hour precipitation amounts
+                try:
+                    obs_6hr_precip = round(obs_hourly_copy['precip_accum_six_hour'][pd.Timestamp(date.year,date.month,date.day,hour)],2)
+                except KeyError: #incomplete data for date
+                    skip_date = True
+                    break
+                if np.isnan(obs_6hr_precip):
+                    obs_6hr_precip = 0.0
+                sum_hourly_precip = 0.0
+                for hour2 in range(hour-5,hour+1): #check and sum 1-hour precipitation amounts
+                    obs_hourly_precip = obs_hourly_copy['precip_accum_one_hour'][pd.Timestamp(date.year,date.month,date.day,hour2)]
+                    if np.isnan(obs_hourly_precip): #missing 1-hour precipitation amount, so use cf6/climo value instead
                         use_cf6_precip = True
+                    else:
+                        sum_hourly_precip += round(obs_hourly_precip,2)
+                if sum_hourly_precip > obs_6hr_precip and not use_cf6_precip: #Missing or incorrect 6-hour precipitation amount but 1-hour precipitation amounts are OK
+                    obs_6hr_precip = round(sum_hourly_precip,2)
+                daily_precip += round(obs_6hr_precip,2)
+            if (round(daily_precip,2) > round(obs_precip,2) and not use_cf6_precip):
+                print('verification: warning: incorrect obs precip of %0.2f for %s, using summed one hour accumulation value of %0.2f' % (obs_precip,date,daily_precip))
+                obs_daily.loc[index, 'precip_accum_six_hour'] = daily_precip
+        else: #1-hour precipitation amounts were used
+            for hour in range(24):
+                try:
+                    obs_hourly_precip = obs_hourly_copy['precip_accum_one_hour'][pd.Timestamp(date.year,date.month,date.day,hour)]
+                except KeyError: #incomplete data for date
+                    skip_date = True
+                    break
+                if np.isnan(obs_hourly_precip):
+                    use_cf6_precip = True
         if skip_date:
             obs_daily.loc[index,max_temp_var] = np.nan
             obs_daily.loc[index,min_temp_var] = np.nan
