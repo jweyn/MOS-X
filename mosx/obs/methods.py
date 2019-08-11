@@ -333,3 +333,30 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
         pickle.dump(obs_export, handle, protocol=2)
 
     return
+
+def process(config, obs):
+    """
+    Returns a numpy array of obs for use in mosx_predictors. The first dimension is date; all other dimensions are
+    serialized.
+    :param config:
+    :param obs: dict: dictionary of processed obs data
+    :return:
+    """
+    if config['verbose']:
+        print('obs.process: processing array for obs data...')
+
+    # Surface observations
+    sfc = obs[b'SFC']
+    num_days = len(sfc.keys())
+    variables = sorted(sfc[list(sfc.keys())[0]].keys())
+    sfc_array = get_array(sfc)
+    sfc_array_r = np.reshape(sfc_array, (num_days, -1))
+
+    # Sounding observations
+    if config['Obs']['use_soundings']:
+        sndg_array = get_array(obs[b'SNDG'])
+        # num_days should be the same first dimension
+        sndg_array_r = np.reshape(sndg_array, (num_days, -1))
+        return np.hstack((sfc_array_r, sndg_array_r))
+    else:
+        return sfc_array_r
