@@ -116,13 +116,10 @@ def get_cf6_files(config, num_files=1):
 def _cf6(config):
     """
     After code by Luke Madaus
-
     This function is used internally only.
-
     Generates verification values from climate CF6 files stored in SITE_ROOT. These files can be generated
     externally by get_cf6_files.py. This function is not necessary if climo data from _climo is found, except for
     recent values which may not be in the NCDC database yet.
-
     :param config:
     :return: dict: wind values from CF6 files
     """
@@ -186,7 +183,6 @@ def _cf6(config):
 def _climo(config, dates=None):
     """
      Fetches climatological wind data using ulmo package to retrieve NCDC archives.
-
     :param config:
     :param dates: list of datetime objects
     :return: dict of high temp, low temp, max wind, and precipitation values
@@ -256,7 +252,6 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
     """
     Generates verification data from MesoWest and saves to a file, which is used to train the model and check test
     results.
-
     :param config:
     :param output_file: str: path to output file
     :param csv_file: str: path to csv file containing observations
@@ -283,7 +278,7 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
     
     all_obspd = pd.read_csv(csv_file)
     obspd = all_obspd[['date_time']+[vars_request[0]]+[vars_request[2]]+[vars_request[4]]+vars_request[6:]] #subset of data used as verification
-    obspd.date_time=np.array([datetime.strptime(date, '%Y-%m-%d %H:%M:%S') for date in obspd['date_time'].values],dtype='datetime64')
+    obspd['date_time']=np.array([datetime.strptime(date, '%Y-%m-%d %H:%M:%S') for date in obspd['date_time'].values],dtype='datetime64[s]')
     dateobj = pd.to_datetime(obspd['date_time']) - timedelta(hours=config['forecast_hour_start'])
     obspd['date_time'] = dateobj
     obspd = obspd.rename(columns={'date_time': datename})
@@ -320,7 +315,6 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
                                 pd.DatetimeIndex(obspd[datename]).month,
                                 pd.DatetimeIndex(obspd[datename]).day,
                                 pd.DatetimeIndex(obspd[datename]).hour]).agg(aggregate)
-
     # Rename columns
     col_names = obs_hourly.columns.values
     col_names_new = []
