@@ -554,23 +554,9 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
         if col not in export_cols:
             obs_daily.drop(col, 1, inplace=True)
 
-    # If a time series is desired, then get hourly data
+    # If a time series is desired, then get hourly data from csv file
     if config['Model']['predict_timeseries']:
-
-        # Look for desired variables
-        vars_request = ['air_temp', 'relative_humidity', 'wind_speed', 'precip_accum_one_hour']
-
-        # Add variables to the api request
-        vars_api = ''
-        for var in vars_request:
-            vars_api += var + ','
-        vars_api = vars_api[:-1]
-
-        # Units
-        units = 'temp|f,precip|in,speed|kts'
-
-        # Retrieve data
-        obs_hourly_verify = get_obs_hourly(config, api_dates, vars_api, units)
+        obs_hourly_verify = all_obspd[['date_time', 'air_temp', 'relative_humidity', 'wind_speed', 'precip_accum_one_hour']] #subset of data used as verification
 
         # Fix rainfall for categorical and time accumulation
         rain_column = 'precip_last_%d_hour' % config['time_series_interval']
@@ -587,6 +573,7 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
             use_rain_max = True
         else:
             use_rain_max = False
+        print(obs_hourly_verify)
 
     # Export final data
     export_dict = OrderedDict()
@@ -606,6 +593,7 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
             try:
                 series = reindex_hourly(obs_hourly_verify, start, end, config['time_series_interval'],
                                         use_rain_max=use_rain_max)
+                print(series)
             except KeyError:
                 # No values for the day
                 if config['verbose']:
