@@ -465,8 +465,9 @@ def process(config, bufr, advection_diagnostic=True):
         print('bufr.process: processing array for BUFR data...')
     # PROF part of the BUFR data
     items = list(bufr.items())
-    for item in items: #item = (key, value) pair
-        if item[0] == b'PROF': #look for 'BUFR' key
+    print(items)
+    for item in items:
+        if item[0] == b'PROF' or item[0] == 'PROF':
             bufr_prof = item[1]
     bufr_prof = get_array(bufr_prof)
     bufr_dims = list(range(len(bufr_prof.shape)))
@@ -477,8 +478,8 @@ def process(config, bufr, advection_diagnostic=True):
     bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
     bufr_prof = bufr_prof.reshape(tuple(bufr_reshape))
     # SFC part of the BUFR data
-    for item in items: #item = (key, value) pair
-        if item[0] == b'SFC': #look for 'SFC' key
+    for item in items:
+        if item[0] == b'SFC' or item[0] == 'SFC':
             bufr_sfc = item[1]
     bufr_sfc = get_array(bufr_sfc)
     bufr_dims = list(range(len(bufr_sfc.shape)))
@@ -489,8 +490,8 @@ def process(config, bufr, advection_diagnostic=True):
     bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
     bufr_sfc = bufr_sfc.reshape(tuple(bufr_reshape))
     # DAY part of the BUFR data
-    for item in items: #item = (key, value) pair
-        if item[0] == b'DAY': #look for 'DAY' key
+    for item in items:
+        if item[0] == b'DAY' or item[0] == 'DAY':
             bufr_day = item[1]
     bufr_day = get_array(bufr_day)
     bufr_dims = list(range(len(bufr_day.shape)))
@@ -520,8 +521,8 @@ def temp_advection(bufr):
     :return: advection_array: array of num_samples-by-num_features of advection diagnostic
     """
     items = list(bufr.items())
-    for item in items: #item = (key, value) tuple
-        if item[0] == b'PROF': #look for 'PROF' key
+    for item in items:
+        if item[0] == 'PROF' or item[0] == b'PROF':
             bufr_prof = item[1]
     models = list(bufr_prof.keys())
     num_models = len(models)
@@ -552,10 +553,10 @@ def temp_advection(bufr):
             try:
                 for eval_date in bufr_prof[model][date].keys():
                     items = bufr_prof[model][date][eval_date].items()
-                    for item in items: #item = (key, value) tuple
-                        if item[0] == b'UWND': #look for 'UWND' key
+                    for item in items:
+                        if item[0] == 'UWND' or item[0] == b'UWND':
                             u = item[1]
-                        if item[0] == b'VWND': #look for 'VWND' key
+                        if item[0] == 'VWND' or item[0] == b'VWND':
                             v = item[1]
                     try:
                         V1 = np.array([u[0], v[0]])
