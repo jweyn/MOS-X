@@ -59,7 +59,10 @@ def bufkit_parser_time_height(config, file_name, interval=1, start_dt=None, end_
         for n in range(dum_num):
             re_string = re_string + '(-?\d{1,5}.\d{2}) '
         re_string = re_string[:-1]  # Get rid of the trailing space
-        re_string = re_string + '\r\n'
+        if line[-2] == '\r': #Python 2 has a carriage return
+            re_string = re_string + '\r\n'
+        else: #Python 3 doesn't have one
+            re_string = re_string + '\n'
 
     # Compile this re_string for more efficient re searches
     block_expr = re.compile(re_string)
@@ -67,7 +70,10 @@ def bufkit_parser_time_height(config, file_name, interval=1, start_dt=None, end_
     # Now get corresponding indices of the variables we need
     full_line = ''
     for r in block_lines:
-        full_line = full_line + r[:-2] + ' '
+        if r[-2] == '\r': #Python 2 has a carriage return
+            full_line = full_line + r[:-2] + ' '
+        else: #Python 3 doesn't have it
+            full_line = full_line + r[:-1] + ' '
     # Now split it
     varlist = re.split('[ /]', full_line)
     # Get rid of trailing space
@@ -185,13 +191,19 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
     dum_num = len(block_lines[0].split()) - 2
     for n in range(dum_num):
         re_string = re_string + " (-?\d{1,4}.\d{2})"
-    re_string = re_string + '\r\n'
+    if block_lines[0][-2] == '\r': #Python 2 has a carriage return
+        re_string = re_string + '\r\n'
+    else: #Python 3 doesn't have one
+        re_string = re_string + '\n'
     for line in block_lines[1:]:
         dum_num = len(line.split())
         for n in range(dum_num):
             re_string = re_string + '(-?\d{1,4}.\d{2}) '
         re_string = re_string[:-1]  # Get rid of the trailing space
-        re_string = re_string + '\r\n'
+        if line[-2] == '\r': #Python 2 has a carriage return
+            re_string = re_string + '\r\n'
+        else: #Python 3 doesn't have one
+            re_string = re_string + '\n'
 
     # Compile this re_string for more efficient re searches
     block_expr = re.compile(re_string)
@@ -199,7 +211,11 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
     # Now get corresponding indices of the variables we need
     full_line = ''
     for r in block_lines:
-        full_line = full_line + r[:-2] + ' '
+        print(r)
+        if r[-2] == '\r': #Python 2 has a carriage return
+            full_line = full_line + r[:-2] + ' '
+        else: #Python 3 doesn't have it
+            full_line = full_line + r[:-1] + ' '
     # Now split it
     varlist = re.split('[ /]', full_line)
 
