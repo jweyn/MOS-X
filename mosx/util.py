@@ -205,16 +205,21 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
     :param return_data: bool: if True, returns edited data dictionaries containing only matching dates' data
     :return: list of dates[, new BUFR, OBS, and VERIF dictionaries]
     """
-    obs_dates = obs['SFC'].keys()
+    try:
+        obs_dates = obs['SFC'].keys()
+    except KeyError:
+        obs_dates = obs[b'SFC'].keys()
     if verif is not None:
         verif_dates = verif.keys()
     # For BUFR dates, find for all models
     items = list(bufr.items())
-    for item in items: #item = (key, value) tuple
-        if item[0] == b'SFC': #look for 'SFC' key
+    for item in items:
+        if item[0] == 'SFC' or item[0] == b'SFC':
             bufr_sfc = item[1]
     bufr_dates_list = [bufr_sfc[key].keys() for key in bufr_sfc.keys()]
     bufr_dates = bufr_dates_list[0] 
+    #for m in range(1, len(bufr_dates_list)):
+        #bufr_dates = set(bufr_dates).intersection(set(bufr_dates_list[m]))
     if verif is not None:
         all_dates = (set(verif_dates).intersection(set(obs_dates))).intersection(bufr_dates)
     else:
@@ -223,10 +228,10 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
         raise ValueError('Sorry, no matching dates found in data!')
     print('find_matching_dates: found %d matching dates.' % len(all_dates))
     if return_data:
-        for lev in [b'SFC', b'PROF', b'DAY']:
+        for lev in ['SFC', 'PROF', 'DAY', b'SFC', b'PROF', b'DAY']:
             items = list(bufr.items())
-            for item in items: #item = (key, value) tuple
-                if item[0] == lev: #look for lev key
+            for item in items:
+                if item[0] == lev:
                     bufr_lev = item[1]
             for model in bufr_lev.keys():
                 for date in list(bufr_lev[model].keys()):
@@ -234,8 +239,14 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
                         bufr_lev[model].pop(date, None)
         for date in list(obs_dates):
             if date not in all_dates:
-                obs['SFC'].pop(date, None)
-                obs['SNDG'].pop(date, None)
+                try:
+                    obs['SFC'].pop(date, None)
+                except KeyError:
+                    obs[b'SFC'].pop(date, None)
+                try:
+                    obs['SNDG'].pop(date, None)
+                except KeyError:
+                    obs[b'SNDG'].pop(date, None)
         if verif is not None:
             for date in list(verif_dates):
                 if date not in all_dates:
@@ -280,7 +291,6 @@ def _get_array(dictionary, out_array):
         for i, d in enumerate(dictionary.values()):
             _get_array(d, out_array[i, :])
 
-
 def unpickle(bufr_file, obs_file, verif_file):
     """
     Shortcut function to unpickle bufr, obs, and verif files all at once. verif_file may be None if running the model.
@@ -291,14 +301,14 @@ def unpickle(bufr_file, obs_file, verif_file):
     """
     print('util: loading BUFKIT data from %s' % bufr_file)
     handle = open(bufr_file, 'rb')
-    bufr = pickle.load(handle, encoding='bytes')
+    bufr = pickle.load(handle)
     print('util: loading OBS data from %s' % obs_file)
     handle = open(obs_file, 'rb')
-    obs = pickle.load(handle, encoding='bytes')
+    obs = pickle.load(handle)
     if verif_file is not None:
         print('util: loading VERIFICATION data from %s' % verif_file)
         handle = open(verif_file, 'rb')
-        verif = pickle.load(handle, encoding='bytes')
+        verif = pickle.load(handle)
     else:
         verif = None
     return bufr, obs, verif
