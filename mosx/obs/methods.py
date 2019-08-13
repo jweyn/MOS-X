@@ -17,7 +17,7 @@ from collections import OrderedDict
 from mosx.MesoPy import Meso
 from metpy.io import get_upper_air_data
 from metpy.calc import interp
-from mosx.util import generate_dates, get_array
+from mosx.util import generate_dates, get_array, read_pkl
 
 
 def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True):
@@ -48,8 +48,7 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
     sndg_file = '%s/%s_SNDG_%s.pkl' % (sndg_data_dir, config['station_id'], datetime.strftime(date, '%Y%m%d%H'))
     if use_existing:
         try:
-            with open(sndg_file, 'rb') as handle:
-                data = pickle.load(handle)
+            data = read_pkl(sndg_file)
             if config['verbose']:
                 print('    Read from file.')
         except:
@@ -99,7 +98,6 @@ def get_obs_hourly(config, api_dates, vars_api, units):
     """
     Retrieve hourly obs data in a pd dataframe. In order to ensure that there is no missing hourly indices, use
     dataframe.reindex on each retrieved dataframe.
-
     :param api_dates: dates from generate_dates
     :param vars_api: str: string formatted for api call var parameter
     :param units: str: string formatted for api call units parameter
@@ -193,7 +191,7 @@ def reindex_hourly(df, start, end, interval, end_23z=False, use_rain_max=False):
     period = pd.date_range(start, end, freq='%dH' % interval)
     # Create a column with the new index an ob falls into
     if type(df.index.values[0]) == np.int64: #observations from csv file
-        df.date_time=np.array([datetime.strptime(date, '%Y-%m-%d %H:%M:%S') for date in df['date_time'].values],dtype='datetime64')
+        df.date_time=np.array([datetime.strptime(date, '%Y-%m-%d %H:%M:%S') for date in df['date_time'].values],dtype='datetime64[s]')
         df.set_index('date_time',inplace=True)
     df['period'] = (df.index.values > period.values[..., np.newaxis]).sum(0)
     df['DateTime'] = df.index.values
@@ -213,7 +211,6 @@ def reindex_hourly(df, start, end, interval, end_23z=False, use_rain_max=False):
     except (ValueError, KeyError):
         pass
     df_reindex = df_reindex.set_index('DateTime')
-
     return df_reindex
 
 
@@ -221,7 +218,6 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
     """
     Generates observation data from MesoWest and UCAR soundings and saves to a file, which can later be retrieved for
     either training data or model run data.
-
     :param config:
     :param output_file: str: output file path
     :param csv_file: str: path to csv file containing observations
@@ -291,7 +287,7 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
         obs_hourly = all_obs_hourly[['date_time']+vars_request[0:6]] #subset of data used as predictors
         with open('%s/%s_obs_vars_request.txt' % (config['SITE_ROOT'], config['station_id']),'rb') as fp:
             vars_request = pickle.load(fp)
-            
+
     # Retrieve upper-air sounding data
     if config['verbose']:
         print('obs: retrieving upper-air sounding data')
@@ -303,7 +299,7 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
             for hour in [0, 12]:
                 sounding_date = start_date + timedelta(hours=hour)
                 try:
-                    sounding = upper_air(sounding_date, use_nan_sounding, use_existing=use_existing_sounding)
+                    sounding = upper_air(config, sounding_date, use_nan_sounding, use_existing=use_existing_sounding)
                     soundings[date][sounding_date] = sounding
                 except:
                     print('obs: warning: problem retrieving soundings for %s' % datetime.strftime(date, '%Y%m%d'))
