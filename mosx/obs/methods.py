@@ -289,10 +289,10 @@ def obs(config, output_file=None, csv_file=None, num_hours=24, interval=3, use_n
             vars_request = pickle.load(fp)
 
     # Retrieve upper-air sounding data
-    if config['verbose']:
-        print('obs: retrieving upper-air sounding data')
     soundings = OrderedDict()
     if config['Obs']['use_soundings']:
+        if config['verbose']:
+            print('obs: retrieving upper-air sounding data')
         for date in dates:
             soundings[date] = OrderedDict()
             start_date = date - timedelta(days=1)  # get the previous day's soundings
