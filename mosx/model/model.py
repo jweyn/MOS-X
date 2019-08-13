@@ -10,8 +10,7 @@ Methods for training scikit-learn models.
 
 from datetime import datetime, timedelta
 import pandas as pd
-
-from mosx.util import get_object, to_bool, dewpoint
+from mosx.util import get_object, to_bool, dewpoint, read_pkl
 from mosx.estimators import TimeSeriesEstimator, RainTuningEstimator, BootStrapEnsembleEstimator
 import pickle
 import numpy as np
@@ -20,7 +19,6 @@ import numpy as np
 def build_estimator(config):
     """
     Build the estimator object from the parameters in config.
-
     :param config:
     :return:
     """
@@ -92,12 +90,10 @@ def build_estimator(config):
         estimator = BootStrapEnsembleEstimator(estimator, **bootstrap)
 
     return estimator
-
-
+    
 def build_train_data(config, predictor_file, no_obs=False, no_models=False, test_size=0):
     """
     Build the array of training (and optionally testing) data.
-
     :param config:
     :param predictor_file:
     :param no_obs:
@@ -110,8 +106,7 @@ def build_train_data(config, predictor_file, no_obs=False, no_models=False, test
     if config['verbose']:
         print('build_train_data: reading predictor file')
     rain_tuning = config['Model'].get('Rain tuning', None)
-    with open(predictor_file, 'rb') as handle:
-        data = pickle.load(handle)
+    data = read_pkl(predictor_file)
 
     # Select data
     if no_obs and no_models:
@@ -128,6 +123,7 @@ def build_train_data(config, predictor_file, no_obs=False, no_models=False, test
     else:
         predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)
     if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+        data.rain = np.array([data.rain]).T
         predictors = np.concatenate((predictors, data.rain), axis=1)
         rain_shape = data.rain.shape[-1]
     targets = data['VERIF']
@@ -154,7 +150,6 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
     """
     Generate and train a scikit-learn machine learning estimator. The estimator object is saved as a pickle so that it
     may be imported and used for predictions at any time.
-
     :param config:
     :param predictor_file: str: full path to saved file of predictor data
     :param estimator_file: str: full path to output model file
@@ -176,7 +171,7 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
         estimator.fit(p_train, t_train, rain_array=r_train)
     else:
         estimator.fit(p_train, t_train)
-
+        
     if estimator_file is None:
         estimator_file = '%s/%s_mosx.pkl' % (config['MOSX_ROOT'], config['station_id'])
     print('train: -> exporting to %s' % estimator_file)
@@ -188,7 +183,7 @@ def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=F
     return
 
 
-def _plot_learning_curve(estimator, X, y, ylim=None, cv=None, scoring=None, title=None, n_jobs=1,
+def plot_learning_curve_(estimator, X, y, ylim=None, cv=None, scoring=None, title=None, n_jobs=1,
                          train_sizes=np.linspace(.1, 1.0, 5)):
     import matplotlib.pyplot as plt
     from sklearn.model_selection import learning_curve
@@ -227,23 +222,17 @@ def plot_learning_curve(config, predictor_file, no_obs=False, no_models=False, y
     """
     Generate a simple plot of the test and training learning curve. From scikit-learn:
     http://scikit-learn.org/stable/auto_examples/model_selection/plot_learning_curve.html
-
     Parameters
     ----------
     config :
-
     predictor_file : string
         Full path to file containing predictor data
-
     no_obs : boolean
         Train model without observations
-
     no_models : boolean
         Train model without model data
-
     ylim : tuple, shape (ymin, ymax), optional
         Defines minimum and maximum yvalues plotted.
-
     cv : int, cross-validation generator or an iterable, optional
         Determines the cross-validation splitting strategy.
         Possible inputs for cv are:
@@ -251,29 +240,23 @@ def plot_learning_curve(config, predictor_file, no_obs=False, no_models=False, y
           - integer, to specify the number of folds.
           - An object to be used as a cross-validation generator.
           - An iterable yielding train/test splits.
-
         For integer/None inputs, if ``y`` is binary or multiclass,
         :class:`StratifiedKFold` used. If the estimator is not a classifier
         or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
-
         Refer :ref:`User Guide <cross_validation>` for the various
         cross-validators that can be used here.
-
     scoring :
         Scoring function for the error calculation; should be a scikit-learn scorer object
-
     title : string
         Title for the chart.
-
     n_jobs : integer, optional
         Number of jobs to run in parallel (default 1).
-
     train_sizes : iterable, optional
         Sequence of subsets of training data used in learning curve plot
     """
     estimator = build_estimator(config)
     X, y = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models)
-    fig = _plot_learning_curve(estimator, X, y, ylim=ylim, cv=cv, scoring=scoring, title=title, n_jobs=n_jobs,
+    fig = plot_learning_curve_(estimator, X, y, ylim=ylim, cv=cv, scoring=scoring, title=title, n_jobs=n_jobs,
                                train_sizes=train_sizes)
     return fig
 
@@ -282,7 +265,6 @@ def combine_train_test(config, train_file, test_file, no_obs=False, no_models=Fa
     """
     Concatenates the arrays of predictors and verification values from the train file and the test file. Useful for
     implementing cross-validation using scikit-learn's methods and the SplitConsecutive class.
-
     :param config:
     :param train_file: str: full path to predictor file for training
     :param test_file: str: full path to predictor file for validation
@@ -292,8 +274,8 @@ def combine_train_test(config, train_file, test_file, no_obs=False, no_models=Fa
     :return: predictors, verifications: concatenated arrays of predictors and verification values; count: number of
     samples in the test set
     """
-    p_train, t_train = build_train_data(config, train_file, no_obs=no_obs, no_models=no_models)
-    p_test, t_test = build_train_data(config, test_file, no_obs=no_obs, no_models=no_models)
+    p_train, t_train, r_train = build_train_data(config, train_file, no_obs=no_obs, no_models=no_models)
+    p_test, t_test, r_test = build_train_data(config, test_file, no_obs=no_obs, no_models=no_models)
     p_combined = np.concatenate((p_train, p_test), axis=0)
     t_combined = np.concatenate((t_train, t_test), axis=0)
     if return_count_test:
@@ -311,7 +293,6 @@ class SplitConsecutive(object):
     def __init__(self, first=False, n_samples=0.2):
         """
         Create an instance of SplitConsecutive.
-
         :param first: bool: if True, gets test data from the beginning of the data set; otherwise from the end
         :param n_samples: float or int: if float, subsets a fraction (0 to 1) of the data into the test set; if int,
         subsets a specific number of samples.
@@ -333,7 +314,6 @@ class SplitConsecutive(object):
     def split(self, X, y=None, groups=None):
         """
         Produces arrays of indices to use for model and test splits.
-
         :param X: array-like, shape (samples, features): predictor data
         :param y: array-like, shape (samples, outputs) or None: verification data; ignored
         :param groups: ignored
@@ -354,7 +334,6 @@ class SplitConsecutive(object):
     def get_n_splits(self, X=None, y=None, groups=None):
         """
         Return the number of splits. Dummy function for compatibility.
-
         :param X: ignored
         :param y: ignored
         :param groups: ignored
@@ -367,7 +346,6 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
                 round_result=False, **kwargs):
     """
     Predict forecasts from the estimator in config. Also return probabilities and time series.
-
     :param config:
     :param predictor_file: str: file containing predictor data from mosx.model.format_predictors
     :param ensemble: bool: if True, return an array of num_trees-by-4 of the predictions of each tree in the estimator
@@ -382,13 +360,11 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
     predicted_timeseries: DataFrame: time series for final sample
     """
     # Load the predictor data and estimator
-    with open(predictor_file, 'rb') as handle:
-        predictor_data = pickle.load(handle)
+    predictor_data = read_pkl(predictor_file)
     rain_tuning = config['Model'].get('Rain tuning', None)
     if config['verbose']:
         print('predict: loading estimator %s' % config['Model']['estimator_file'])
-    with open(config['Model']['estimator_file'], 'rb') as handle:
-        estimator = pickle.load(handle)
+    estimator = read_pkl(config['Model']['estimator_file'])
 
     predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
     if config['Model']['rain_forecast_type'] == 'pop' and getattr(estimator, 'is_classifier', False):
@@ -479,7 +455,6 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
 def predict(config, predictor_file, naive_rain_correction=False, round=False, **kwargs):
     """
     Predict forecasts from the estimator in config. Only returns daily values.
-
     :param config:
     :param predictor_file: str: file containing predictor data from mosx.model.format_predictors
     :param naive_rain_correction: bool: if True, applies manual tuning to the rain forecast
@@ -497,7 +472,6 @@ def predict(config, predictor_file, naive_rain_correction=False, round=False, **
 def predict_rain_proba(config, predictor_file):
     """
     Predict probabilistic rain forecasts for 'pop' or 'categorical' types.
-
     :param config:
     :param predictor_file: str: file containing predictor data from mosx.model.format_predictors
     :return:
@@ -509,12 +483,10 @@ def predict_rain_proba(config, predictor_file):
         raise TypeError('Probabilistic rain forecasts are only possible with a RainTuningEstimator')
 
     # Load the predictor data and estimator
-    with open(predictor_file, 'rb') as handle:
-        predictor_data = pickle.load(handle)
+    predictor_data = read_pkl(predictor_file)
     if config['verbose']:
         print('predict: loading estimator %s' % config['Model']['estimator_file'])
-    with open(config['Model']['estimator_file'], 'rb') as handle:
-        estimator = pickle.load(handle)
+    estimator = read_pkl(config['Model']['estimator_file'])
 
     predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
     if to_bool(rain_tuning.get('use_raw_rain', False)):
