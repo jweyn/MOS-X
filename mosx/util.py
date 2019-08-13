@@ -233,10 +233,14 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
             for item in items:
                 if item[0] == lev:
                     bufr_lev = item[1]
-            for model in bufr_lev.keys():
-                for date in list(bufr_lev[model].keys()):
-                    if date not in all_dates:
-                        bufr_lev[model].pop(date, None)
+                    break
+                else:
+                    bufr_lev = None
+            if bufr_lev != None:
+                for model in bufr_lev.keys():
+                    for date in list(bufr_lev[model].keys()):
+                        if date not in all_dates:
+                            bufr_lev[model].pop(date, None)
         for date in list(obs_dates):
             if date not in all_dates:
                 try:
@@ -291,6 +295,7 @@ def _get_array(dictionary, out_array):
         for i, d in enumerate(dictionary.values()):
             _get_array(d, out_array[i, :])
 
+
 def unpickle(bufr_file, obs_file, verif_file):
     """
     Shortcut function to unpickle bufr, obs, and verif files all at once. verif_file may be None if running the model.
@@ -300,15 +305,12 @@ def unpickle(bufr_file, obs_file, verif_file):
     :return:
     """
     print('util: loading BUFKIT data from %s' % bufr_file)
-    handle = open(bufr_file, 'rb')
-    bufr = pickle.load(handle)
+    bufr = read_pkl(bufr_file)
     print('util: loading OBS data from %s' % obs_file)
-    handle = open(obs_file, 'rb')
-    obs = pickle.load(handle)
+    obs = read_pkl(obs_file)
     if verif_file is not None:
         print('util: loading VERIFICATION data from %s' % verif_file)
-        handle = open(verif_file, 'rb')
-        verif = pickle.load(handle)
+        verif = read_pkl(verif_file)
     else:
         verif = None
     return bufr, obs, verif
@@ -428,3 +430,15 @@ def to_bool(x):
     except (ValueError, TypeError):
         pass
     raise ValueError("Unknown boolean specifier: '%s'." % x)
+    
+def read_pkl(filename):
+    '''
+    Reads a pickle file from filename according to whether we are using Python 2 or 3.
+    '''
+    try:
+        with open(filename, 'rb') as handle:
+            data = pickle.load(handle)
+    except UnicodeDecodeError: #Python 3 requires you to explicitly tell it to use byte encoding when opening Python 2 made pickle files 
+        with open(filename, 'rb') as handle:
+            data = pickle.load(handle, encoding='bytes')
+    return data
