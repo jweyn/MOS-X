@@ -72,8 +72,8 @@ def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None,
     for date in all_dates:
         precip = []
         items = list(bufr.items())
-        for item in items: #item = (key, value) pair
-            if item[0] == b'DAY' or item[0] == 'DAY':: #look for 'DAY' key
+        for item in items:
+            if item[0] == b'DAY' or item[0] == 'DAY':
                 bufr_day = item[1]
         for model in bufr_day.keys():
             try:
@@ -93,3 +93,4 @@ def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None,
         return all_dates
     else:
         return
+        
