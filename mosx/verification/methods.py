@@ -587,7 +587,6 @@ def verification(config, output_file=None, csv_file=None, use_cf6=True, use_clim
             try:
                 series = reindex_hourly(obs_hourly_verify, start, end, config['time_series_interval'],
                                         use_rain_max=use_rain_max)
-                print(series)
             except KeyError:
                 # No values for the day
                 if config['verbose']:
