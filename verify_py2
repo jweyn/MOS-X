@@ -1,0 +1,331 @@
+#!/usr/bin/env python2
+#
+# Copyright (c) 2018 Jonathan Weyn <jweyn@uw.edu>
+#
+# See the file LICENSE for your rights.
+#
+
+"""
+Verify the MOS-X model, along with GFS and NAM MOS products, for a range of dates.
+"""
+
+import mosx
+import sys
+import os
+import numpy as np
+import pandas as pd
+from urllib import urlopen
+from collections import OrderedDict
+from optparse import OptionParser
+from datetime import datetime, timedelta
+import pickle
+
+# Suppress warnings
+import warnings
+warnings.filterwarnings("ignore")
+
+
+def get_command_options():
+    parser = OptionParser()
+    parser.add_option('-s', '--start-date', dest='startstr', action='store', type='string', default='weekago',
+                      help='Starting verification date, YYYYMMDD (default=today)')
+    parser.add_option('-e', '--end-date', dest='endstr', action='store', type='string', default='today',
+                      help='Ending verification date, YYYYMMDD (default=weekago)')
+    parser.add_option('-t', '--naive-rain-correction', dest='tune_rain', action='store_true', default=False,
+                      help='Use the raw precipitation from GFS/NAM to override or average with MOS-X')
+    parser.add_option('-r', '--rain-post-average', dest='avg_rain', action='store_true', default=False,
+                      help='If using a RainTuningEstimator, this will average the raw estimation from an ensemble'
+                           'with that of the rain tuning post-processor')
+    parser.add_option('-m', '--verify-mos', dest='mos_flag', action='store_true', default=False,
+                      help="Also retrieve GFS and NAM MOS forecasts for comparison")
+    parser.add_option('-N', '--no-verify', dest='no_verif_flag', action='store_true', default=False,
+                      help="Don't do verification, just get the model forecasts")
+    parser.add_option('-o', '--overwrite', dest='overwrite', action='store_true', default=False,
+                      help='Overwrite any existing BUFR, obs, and verification files')
+    parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False,
+                      help='Write a CSV file')
+    default_file = './MOS-X_verification.csv'
+    parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default=default_file,
+                      help=('If -w is enabled, write to this file (default %s)' % default_file))
+    (opts, args) = parser.parse_args()
+    return opts, args
+
+
+def mos_qpf_interpret(qpf):
+    """
+    Interprets a pandas Series of QPF by average estimates
+    :param qpf: Series of q06 or q12 from MOS
+    :return: precip: Series of average estimated precipitation
+    """
+    translator = {0: 0.0,
+                  1: 0.05,
+                  2: 0.15,
+                  3: 0.35,
+                  4: 0.75,
+                  5: 1.5,
+                  6: 2.5}
+    new_qpf = qpf.copy()
+    for j in range(len(qpf)):
+        try:
+            new_qpf.iloc[j] = translator[int(qpf.iloc[j])]
+        except:
+            new_qpf.iloc[j] = 0.0
+    return new_qpf
+
+
+def retrieve_mos(model, init_date, forecast_date):
+    """
+    Retrieve MOS data.
+    :param model: model name (GFS or NAM)
+    :param init_date: datetime of model initialization
+    :param forecast_date: datetime of forecast
+    :return: dict of high, low, max wind, total rain for next 6Z--6Z
+    """
+
+    # Create daily return dict
+    daily = OrderedDict()
+
+    base_url = 'http://mesonet.agron.iastate.edu/mos/csv.php?station=%s&runtime=%s&model=%s'
+    formatted_date = init_date.strftime('%Y-%m-%d%%20%H:00')
+    url = base_url % (config['station_id'], formatted_date, model)
+    response = urlopen(url)
+    df = pd.read_csv(response, index_col=False)
+    date_index = pd.to_datetime(df['ftime'])
+    df['datetime'] = date_index
+    df = df.set_index('datetime')
+
+    # Remove duplicate rows
+    df = df.drop_duplicates()
+
+    # Fix rain
+    df['q06'] = mos_qpf_interpret(df['q06'])
+
+    forecast_start = forecast_date.replace(hour=6)
+    forecast_end = forecast_start + timedelta(days=1)
+
+    # Some parameters need to include the forecast start; others, like total rain and 6-hour maxes, don't
+    try:
+        iloc_start_include = df.index.get_loc(forecast_start)
+        iloc_start_exclude = iloc_start_include + 1
+    except:
+        print('Error getting start time index in db; check data.')
+        return
+    try:
+        iloc_end = df.index.get_loc(forecast_end) + 1
+    except:
+        print('Error getting end time index in db; check data.')
+        return
+
+    raw_high = df.iloc[iloc_start_include:iloc_end]['tmp'].max()
+    raw_low = df.iloc[iloc_start_include:iloc_end]['tmp'].min()
+    nx_high = df.iloc[iloc_start_exclude:iloc_end]['n_x'].max()
+    nx_low = df.iloc[iloc_start_exclude:iloc_end]['n_x'].max()
+    daily['Tmax'] = np.nanmax([raw_high, nx_high])
+    daily['Tmin'] = np.nanmin([raw_low, nx_low])
+    daily['Wind'] = df.iloc[iloc_start_include:iloc_end]['wsp'].max()
+    daily['Rain'] = df.iloc[iloc_start_exclude:iloc_end]['q06'].sum()
+
+    return daily
+
+
+# Parameters
+
+options, arguments = get_command_options()
+
+try:
+    config_file = arguments[0]
+except IndexError:
+    print('Required argument (config file) not provided.')
+    sys.exit(1)
+config = mosx.util.get_config(config_file)
+
+if options.endstr == 'today':
+    date = datetime.utcnow()
+    # BUFR cycle
+    cycle = '18'
+    if date.hour < 6:
+        end_date = datetime(date.year, date.month, date.day) - timedelta(days=2)
+    else:
+        end_date = datetime(date.year, date.month, date.day) - timedelta(days=1)
+    if options.no_verif_flag:
+        end_date += timedelta(days=2)
+else:
+    cycle = '18'
+    try:
+        end_date = datetime.strptime(options.endstr, '%Y%m%d')
+    except:
+        raise ValueError('Invalid date format entered (use YYYYMMDD).')
+
+if options.startstr == 'weekago':
+    date = datetime.utcnow()
+    start_date = datetime(date.year, date.month, date.day) - timedelta(days=7)
+else:
+    try:
+        start_date = datetime.strptime(options.startstr, '%Y%m%d')
+    except:
+        raise ValueError('Invalid date format entered (use YYYYMMDD).')
+
+# Override the INFILE values
+new_start_date = datetime.strftime(start_date, '%Y%m%d')
+new_end_date = datetime.strftime(end_date, '%Y%m%d')
+config['data_start_date'] = new_start_date
+config['data_end_date'] = new_end_date
+
+
+# Retrieve data
+
+bufr_file = '%s/%s_verify_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+print('\n--- MOS-X verify: retrieving BUFR data...\n')
+print('Using model cycle %sZ' % cycle)
+if os.path.isfile(bufr_file) and not options.overwrite:
+    print('Using existing BUFR file %s' % bufr_file)
+    print('If issues occur, delete this file and try again')
+else:
+    print('Using model cycle %sZ' % cycle)
+    mosx.bufr.bufr(config, bufr_file, cycle=cycle)
+
+obs_file = '%s/%s_verify_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+print('\n--- MOS-X verify: retrieving OBS data...\n')
+if os.path.isfile(obs_file) and not options.overwrite:
+    print('Using existing obs file %s' % obs_file)
+    print('If issues occur, delete this file and try again')
+else:
+    mosx.obs.obs(config, obs_file, use_nan_sounding=False)
+
+if not options.no_verif_flag:
+    verif_file = '%s/%s_verify_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    print('\n--- MOS-X verify: retrieving VERIF data...\n')
+    if os.path.isfile(verif_file) and not options.overwrite:
+        print('Using existing verif file %s' % verif_file)
+        print('If issues occur, delete this file and try again')
+    else:
+        mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=config['Obs']['use_climo_wind'])
+    with open(verif_file, 'rb') as handle:
+        verif = pickle.load(handle)
+else:
+    verif_file = None
+
+
+# Format data
+
+predictor_file = '%s/%s_verify_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'],
+                                              new_end_date)
+print('\n--- MOS-X run: formatting predictor data...\n')
+all_dates = mosx.model.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file,
+                                         return_dates=True)
+
+
+# Make a prediction!
+
+predicted = mosx.model.predict(config, predictor_file, naive_rain_correction=options.tune_rain)
+if options.avg_rain:
+    print('Using average of raw and rain-tuned precipitation forecasts')
+    no_tuned_predictions = mosx.model.predict_all(config, predictor_file, naive_rain_correction=options.tune_rain,
+                                                  rain_tuning=False)
+    predicted = np.mean([predicted, no_tuned_predictions[0]], axis=0)
+
+# Get GFS and NAM MOS forecasts, if desired
+
+if options.mos_flag:
+    gfs = OrderedDict()
+    nam = OrderedDict()
+    mos_mean = OrderedDict()
+    for current_date in all_dates:
+        init_date = current_date - timedelta(days=1)
+        init_date = init_date.replace(hour=12)
+        mos_array = np.full((2, 4), np.nan)
+
+        # GFS
+        print('Retrieving %s data initialized at %s' % ('GFS MOS', init_date))
+        daily = retrieve_mos('GFS', init_date, current_date)
+        if daily is not None:
+            gfs[current_date] = daily
+            mos_array[0, :] = daily.values()
+
+        # NAM
+        print('Retrieving %s data initialized at %s' % ('NAM MOS', init_date))
+        daily = retrieve_mos('NAM', init_date, current_date)
+        if daily is not None:
+            nam[current_date] = daily
+            mos_array[1, :] = daily.values()
+
+        # Ensemble mean
+        mos_array = np.nanmean(mos_array, axis=0)
+        mos_mean[current_date] = {
+            'Tmax': mos_array[0],
+            'Tmin': mos_array[1],
+            'Wind': mos_array[2],
+            'Rain': mos_array[3]
+        }
+
+        current_date += timedelta(days=1)
+
+
+# Print forecasts!
+
+print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
+
+forecast_format = '%0.0f/%0.0f/%0.0f/%0.2f'
+variables = ['Tmax', 'Tmin', 'Wind', 'Rain']
+if options.mos_flag:
+    print('\nDay, verification, GFS MOS, NAM MOS, MOS MEAN, MOS-X')
+else:
+    print('\nDay, verification, MOS-X')
+for day in range(len(all_dates)):
+    date = all_dates[day]
+    if not options.no_verif_flag:
+        verif_str = forecast_format % tuple([verif[date][v] for v in variables])
+    else:
+        verif_str = ''
+    mosx_str = forecast_format % tuple(predicted[day, :4])
+    if options.mos_flag:
+        try:
+            gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
+        except KeyError:
+            gfs_str = ''
+        try:
+            nam_str = forecast_format % tuple([nam[date][v] for v in variables])
+        except KeyError:
+            nam_str = ''
+        try:
+            mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
+        except KeyError:
+            mos_mean_str = ''
+        print('%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str))
+    else:
+        print('%s,%s,%s' % (date, verif_str, mosx_str))
+
+
+# Write the forecast, if requested
+
+if options.write_flag:
+    print('\nForecast write requested, writing to file %s' % options.write_file)
+    
+    with open(options.write_file, 'w') as f:
+        if options.mos_flag:
+            print >> f, 'date,verification,GFS MOS,NAM MOS,MOS MEAN,MOS-X'
+        else:
+            print >> f, 'date,verification,MOS-X'
+        for day in range(len(all_dates)):
+            date = all_dates[day]
+            if not options.no_verif_flag:
+                verif_str = forecast_format % tuple([verif[date][v] for v in variables])
+            else:
+                verif_str = ''
+            mosx_str = forecast_format % tuple(predicted[day, :4])
+            if options.mos_flag:
+                try:
+                    gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
+                except KeyError:
+                    gfs_str = ''
+                try:
+                    nam_str = forecast_format % tuple([nam[date][v] for v in variables])
+                except KeyError:
+                    nam_str = ''
+                try:
+                    mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
+                except KeyError:
+                    mos_mean_str = ''
+                print >> f, '%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str)
+            else:
+                print >>f, '%s,%s,%s' % (date, verif_str, mosx_str)
