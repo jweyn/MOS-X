@@ -465,7 +465,6 @@ def process(config, bufr, advection_diagnostic=True):
         print('bufr.process: processing array for BUFR data...')
     # PROF part of the BUFR data
     items = list(bufr.items())
-    print(items)
     for item in items:
         if item[0] == b'PROF' or item[0] == 'PROF':
             bufr_prof = item[1]
