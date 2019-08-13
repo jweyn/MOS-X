@@ -27,9 +27,11 @@ These data, along with surface observations from MesoWest, are used to train any
 
 ### Installation
 
-Nothing to do really. Just make sure the scripts in the main directory (`build`, `run`, `verify`, `validate`, and `performance`) are executable, for example:
+Nothing to do really. Just make sure the scripts in the main directory (`build`, `run`, `verify_py2` or `verify_py3`, `validate_py2` or `validate_py3`, and `performance`) are executable, for example:
 
-`chmod +x build run verify validate performance`
+`chmod +x build run verify_py3 validate_py3 performance`
+
+The main scripts with "py2" or "py3" in their names indicate they are the separate Python 2 and Python 3 versions respectively.
 
 ## Building a model
 
