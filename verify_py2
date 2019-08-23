@@ -211,6 +211,7 @@ if config['multi_stations']: #if using multiple stations
     station_ids_str = station_ids_str[:-1]
     predictor_file = '%s/%s_verify_%s_predictors.pkl' % (config['SITE_ROOT'], station_ids_str, new_end_date)
 else:
+    station_ids = [config['station_id']]
     bufr_file = '%s/%s_verify_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
     print('\n--- MOS-X verify: retrieving BUFR data...\n')
     print('Using model cycle %sZ' % cycle)
