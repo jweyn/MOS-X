@@ -248,7 +248,7 @@ def train(config, predictor_file, no_obs=False, no_models=False, test_size=0, ov
     :param no_models: bool: if True, generates the model with no BUFR data
     :param test_size: int: if > 0, returns a subset of the training data of size 'test_size' to test on
     :param overwrite: bool: if True, retrains estimators and overwrites estimator files even if they already exist
-    :return: matplotlib Figure if plot_learning_curve is True
+    :return: tuple of training and testing sets if one station, or tuple of lists of such sets if multiple stations
     """
     if config['multi_stations']: #multiple stations
         station_ids = config['station_id']
@@ -359,7 +359,7 @@ def combine_train_test(config, train_file, test_file, no_obs=False, no_models=Fa
     :param no_obs: bool: if True, generates the model with no OBS data
     :param no_models: bool: if True, generates the model with no BUFR data
     :param return_count_test: bool: if True, also returns the number of samples in the test set (see SplitConsecutive)
-    :return: predictors, verifications: concatenated arrays of predictors and verification values; count: number of
+    :return: predictors, verifications: concatenated arrays of predictors and verification values if one station, or lists of such arrays if multiple stations; count: number of
     samples in the test set
     """
     p_train, t_train, r_train = build_train_data(config, train_file, no_obs=no_obs, no_models=no_models)
@@ -452,9 +452,9 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
     :param round_result: bool: if True, rounds the predicted estimate
     :param kwargs: passed to the estimator's 'predict' method
     :return:
-    predicted: ndarray: num_samples x num_predicted_variables predictions
-    all_predicted: ndarray: num_samples x num_predicted_variables x num_ensemble_members predictions for all trees
-    predicted_timeseries: DataFrame: time series for final sample
+    predicted: ndarray: num_samples x num_predicted_variables predictions if one station, or list of such arrays if multiple stations
+    all_predicted: ndarray: num_samples x num_predicted_variables x num_ensemble_members predictions for all trees if one station, or list of such arrays if multiple stations
+    predicted_timeseries: DataFrame: time series for final sample if one station, or list of such time series if multiple stations
     """
     # Load the predictor data and estimator
     predictor_data = read_pkl(predictor_file)
