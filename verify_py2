@@ -43,10 +43,10 @@ def get_command_options():
     parser.add_option('-o', '--overwrite', dest='overwrite', action='store_true', default=False,
                       help='Overwrite any existing BUFR, obs, and verification files')
     parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False,
-                      help='Write a CSV file')
-    default_file = './MOS-X_verification.csv'
-    parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default=default_file,
-                      help=('If -w is enabled, write to this file (default %s)' % default_file))
+                      help='Write CSV files')
+    default_file = None
+    parser.add_option('-f', '--write-file', dest='write_files', action='store', type='string', default=default_file,
+                      help=('If -w is enabled, write to these files'))
     (opts, args) = parser.parse_args()
     return opts, args
 
@@ -173,37 +173,72 @@ config['data_end_date'] = new_end_date
 
 
 # Retrieve data
+if config['multi_stations']: #if using multiple stations
+    station_ids = config['station_id']
+    bufr_file = ['%s/%s_verify_%s_bufr.pkl' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    obs_file = ['%s/%s_verify_%s_obs.pkl' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    verif_file = ['%s/%s_verify_%s_verif.pkl' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    station_ids_str = ''
+    for i in range(len(station_ids)):
+        print('\n--- MOS-X verify: retrieving BUFR data...\n')
+        print('Using model cycle %sZ' % cycle)
+        if os.path.isfile(bufr_file[i]) and not options.overwrite:
+            print('Using existing BUFR file %s' % bufr_file)
+            print('If issues occur, delete this file and try again')
+        else:
+            print('Using model cycle %sZ' % cycle)
+            mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
-bufr_file = '%s/%s_verify_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-print('\n--- MOS-X verify: retrieving BUFR data...\n')
-print('Using model cycle %sZ' % cycle)
-if os.path.isfile(bufr_file) and not options.overwrite:
-    print('Using existing BUFR file %s' % bufr_file)
-    print('If issues occur, delete this file and try again')
+    
+        print('\n--- MOS-X verify: retrieving OBS data...\n')
+        if os.path.isfile(obs_file[i]) and not options.overwrite:
+            print('Using existing obs file %s' % obs_file)
+            print('If issues occur, delete this file and try again')
+        else:
+            mosx.obs.obs(config, obs_file, use_nan_sounding=False)
+
+        if not options.no_verif_flag:
+        
+            print('\n--- MOS-X verify: retrieving VERIF data...\n')
+            if os.path.isfile(verif_file[i]) and not options.overwrite:
+                print('Using existing verif file %s' % verif_file)
+                print('If issues occur, delete this file and try again')
+            else:
+                mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=config['Obs']['use_climo_wind'])
+        else:
+            verif_file = None
+        station_ids_str += station_id + '_'
+    station_ids_str = station_ids_str[:-1]
+    predictor_file = '%s/%s_verify_%s_predictors.pkl' % (config['SITE_ROOT'], station_ids_str, new_end_date)
 else:
+    bufr_file = '%s/%s_verify_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    print('\n--- MOS-X verify: retrieving BUFR data...\n')
     print('Using model cycle %sZ' % cycle)
-    mosx.bufr.bufr(config, bufr_file, cycle=cycle)
-
-obs_file = '%s/%s_verify_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-print('\n--- MOS-X verify: retrieving OBS data...\n')
-if os.path.isfile(obs_file) and not options.overwrite:
-    print('Using existing obs file %s' % obs_file)
-    print('If issues occur, delete this file and try again')
-else:
-    mosx.obs.obs(config, obs_file, use_nan_sounding=False)
-
-if not options.no_verif_flag:
-    verif_file = '%s/%s_verify_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-    print('\n--- MOS-X verify: retrieving VERIF data...\n')
-    if os.path.isfile(verif_file) and not options.overwrite:
-        print('Using existing verif file %s' % verif_file)
+    if os.path.isfile(bufr_file) and not options.overwrite:
+        print('Using existing BUFR file %s' % bufr_file)
         print('If issues occur, delete this file and try again')
     else:
-        mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=config['Obs']['use_climo_wind'])
-    with open(verif_file, 'rb') as handle:
-        verif = pickle.load(handle)
-else:
-    verif_file = None
+        print('Using model cycle %sZ' % cycle)
+        mosx.bufr.bufr(config, bufr_file, cycle=cycle)
+
+    obs_file = '%s/%s_verify_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    print('\n--- MOS-X verify: retrieving OBS data...\n')
+    if os.path.isfile(obs_file) and not options.overwrite:
+        print('Using existing obs file %s' % obs_file)
+        print('If issues occur, delete this file and try again')
+    else:
+        mosx.obs.obs(config, obs_file, use_nan_sounding=False)
+
+    if not options.no_verif_flag:
+        verif_file = '%s/%s_verify_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+        print('\n--- MOS-X verify: retrieving VERIF data...\n')
+        if os.path.isfile(verif_file) and not options.overwrite:
+            print('Using existing verif file %s' % verif_file)
+            print('If issues occur, delete this file and try again')
+        else:
+            mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=config['Obs']['use_climo_wind'])
+    else:
+        verif_file = None
 
 
 # Format data
@@ -222,110 +257,119 @@ if options.avg_rain:
     print('Using average of raw and rain-tuned precipitation forecasts')
     no_tuned_predictions = mosx.model.predict_all(config, predictor_file, naive_rain_correction=options.tune_rain,
                                                   rain_tuning=False)
-    predicted = np.mean([predicted, no_tuned_predictions[0]], axis=0)
-
-# Get GFS and NAM MOS forecasts, if desired
-
-if options.mos_flag:
-    gfs = OrderedDict()
-    nam = OrderedDict()
-    mos_mean = OrderedDict()
-    for current_date in all_dates:
-        init_date = current_date - timedelta(days=1)
-        init_date = init_date.replace(hour=12)
-        mos_array = np.full((2, 4), np.nan)
-
-        # GFS
-        print('Retrieving %s data initialized at %s' % ('GFS MOS', init_date))
-        daily = retrieve_mos('GFS', init_date, current_date)
-        if daily is not None:
-            gfs[current_date] = daily
-            mos_array[0, :] = daily.values()
-
-        # NAM
-        print('Retrieving %s data initialized at %s' % ('NAM MOS', init_date))
-        daily = retrieve_mos('NAM', init_date, current_date)
-        if daily is not None:
-            nam[current_date] = daily
-            mos_array[1, :] = daily.values()
-
-        # Ensemble mean
-        mos_array = np.nanmean(mos_array, axis=0)
-        mos_mean[current_date] = {
-            'Tmax': mos_array[0],
-            'Tmin': mos_array[1],
-            'Wind': mos_array[2],
-            'Rain': mos_array[3]
-        }
-
-        current_date += timedelta(days=1)
-
-
-# Print forecasts!
-
-print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
-
-forecast_format = '%0.0f/%0.0f/%0.0f/%0.2f'
-variables = ['Tmax', 'Tmin', 'Wind', 'Rain']
-if options.mos_flag:
-    print('\nDay, verification, GFS MOS, NAM MOS, MOS MEAN, MOS-X')
-else:
-    print('\nDay, verification, MOS-X')
-for day in range(len(all_dates)):
-    date = all_dates[day]
+for i in range(len(station_ids)):
+    station_id = station_ids[i]
+    if options.avg_rain:
+        predicted_one = np.mean([predicted[i], no_tuned_predictions[0][i]], axis=0)
+    else:
+        predicted_one = predicted[i]
     if not options.no_verif_flag:
-        verif_str = forecast_format % tuple([verif[date][v] for v in variables])
-    else:
-        verif_str = ''
-    mosx_str = forecast_format % tuple(predicted[day, :4])
-    if options.mos_flag:
-        try:
-            gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
-        except KeyError:
-            gfs_str = ''
-        try:
-            nam_str = forecast_format % tuple([nam[date][v] for v in variables])
-        except KeyError:
-            nam_str = ''
-        try:
-            mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
-        except KeyError:
-            mos_mean_str = ''
-        print('%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str))
-    else:
-        print('%s,%s,%s' % (date, verif_str, mosx_str))
-
-
-# Write the forecast, if requested
-
-if options.write_flag:
-    print('\nForecast write requested, writing to file %s' % options.write_file)
-    
-    with open(options.write_file, 'w') as f:
-        if options.mos_flag:
-            print >> f, 'date,verification,GFS MOS,NAM MOS,MOS MEAN,MOS-X'
+        if config['multi_stations']:
+            verif = mosx.util.read_pkl(verif_file[i])
         else:
-            print >> f, 'date,verification,MOS-X'
-        for day in range(len(all_dates)):
-            date = all_dates[day]
-            if not options.no_verif_flag:
-                verif_str = forecast_format % tuple([verif[date][v] for v in variables])
-            else:
-                verif_str = ''
-            mosx_str = forecast_format % tuple(predicted[day, :4])
+            verif = mosx.util.read_pkl(verif_file)
+            
+    # Get GFS and NAM MOS forecasts, if desired
+    if options.mos_flag:
+        gfs = OrderedDict()
+        nam = OrderedDict()
+        mos_mean = OrderedDict()
+        for current_date in all_dates:
+            init_date = current_date - timedelta(days=1)
+            init_date = init_date.replace(hour=12)
+            mos_array = np.full((2, 4), np.nan)
+
+            # GFS
+            print('Retrieving %s data initialized at %s' % ('GFS MOS', init_date))
+            daily = retrieve_mos('GFS', init_date, current_date)
+            if daily is not None:
+                gfs[current_date] = daily
+                mos_array[0, :] = daily.values()
+
+            # NAM
+            print('Retrieving %s data initialized at %s' % ('NAM MOS', init_date))
+            daily = retrieve_mos('NAM', init_date, current_date)
+            if daily is not None:
+                nam[current_date] = daily
+                mos_array[1, :] = daily.values()
+
+            # Ensemble mean
+            mos_array = np.nanmean(mos_array, axis=0)
+            mos_mean[current_date] = {
+                'Tmax': mos_array[0],
+                'Tmin': mos_array[1],
+                'Wind': mos_array[2],
+                'Rain': mos_array[3]
+            }
+
+            current_date += timedelta(days=1)
+
+
+    # Print forecasts!
+
+    print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
+
+    forecast_format = '%0.0f/%0.0f/%0.0f/%0.2f'
+    variables = ['Tmax', 'Tmin', 'Wind', 'Rain']
+    if options.mos_flag:
+        print('\nDay, verification, GFS MOS, NAM MOS, MOS MEAN, MOS-X')
+    else:
+        print('\nDay, verification, MOS-X')
+    for day in range(len(all_dates)):
+        date = all_dates[day]
+        if not options.no_verif_flag:
+            verif_str = forecast_format % tuple([verif[date][v] for v in variables])
+        else:
+            verif_str = ''
+        mosx_str = forecast_format % tuple(predicted_one[day, :4])
+        if options.mos_flag:
+            try:
+                gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
+            except KeyError:
+                gfs_str = ''
+            try:
+                nam_str = forecast_format % tuple([nam[date][v] for v in variables])
+            except KeyError:
+                nam_str = ''
+            try:
+                mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
+            except KeyError:
+                mos_mean_str = ''
+            print('%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str))
+        else:
+            print('%s,%s,%s' % (date, verif_str, mosx_str))
+
+
+    # Write the forecast, if requested
+
+    if options.write_flag:
+        print('\nForecast write requested, writing to file %s' % options.write_files[i])
+    
+        with open(options.write_files[i], 'w') as f:
             if options.mos_flag:
-                try:
-                    gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
-                except KeyError:
-                    gfs_str = ''
-                try:
-                    nam_str = forecast_format % tuple([nam[date][v] for v in variables])
-                except KeyError:
-                    nam_str = ''
-                try:
-                    mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
-                except KeyError:
-                    mos_mean_str = ''
-                print >> f, '%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str)
+                print >> f, 'date,verification,GFS MOS,NAM MOS,MOS MEAN,MOS-X'
             else:
-                print >>f, '%s,%s,%s' % (date, verif_str, mosx_str)
+                print >> f, 'date,verification,MOS-X'
+            for day in range(len(all_dates)):
+                date = all_dates[day]
+                if not options.no_verif_flag:
+                    verif_str = forecast_format % tuple([verif[date][v] for v in variables])
+                else:
+                    verif_str = ''
+                mosx_str = forecast_format % tuple(predicted_one[day, :4])
+                if options.mos_flag:
+                    try:
+                        gfs_str = forecast_format % tuple([gfs[date][v] for v in variables])
+                    except KeyError:
+                        gfs_str = ''
+                    try:
+                        nam_str = forecast_format % tuple([nam[date][v] for v in variables])
+                    except KeyError:
+                        nam_str = ''
+                    try:
+                        mos_mean_str = forecast_format % tuple([mos_mean[date][v] for v in variables])
+                    except KeyError:
+                        mos_mean_str = ''
+                    print >> f, '%s,%s,%s,%s,%s,%s' % (date, verif_str, gfs_str, nam_str, mos_mean_str, mosx_str)
+                else:
+                    print >>f, '%s,%s,%s' % (date, verif_str, mosx_str)
