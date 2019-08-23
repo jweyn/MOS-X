@@ -36,7 +36,7 @@ def get_command_options():
     parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False,
                       help='Write to a pickle file')
     parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default='default',
-                      help='If -w is enabled, write to this file (default $SITE_ROOT/$(station_id)_MOSX_fcst). '
+                      help='If -w is enabled, write to these files. '
                            'File extension is added based on file type.')
     parser.add_option('-u', '--upload', dest='upload', action='store_true', default=False,
                       help='Upload upload forecast output to server in config')
@@ -47,17 +47,21 @@ def get_command_options():
 
 
 # Figure out the date
-
 options, arguments = get_command_options()
-datestr, write_flag, write_base, upload, prob = (options.datestr, options.write_flag, options.write_file,
+datestr, write_flag, write_bases, upload, prob = (options.datestr, options.write_flag, options.write_file,
                                                  options.upload, options.prob)
+if ' ' not in write_bases and write_bases != 'default': #just one station
+    write_bases = [write_bases]
+elif write_bases != 'default': #multiple stations
+    write_bases = write_bases.split(' ')
+        
 try:
     config_file = arguments[0]
 except IndexError:
     print('Required argument (config file) not provided.')
     sys.exit(1)
 config = mosx.util.get_config(config_file)
-
+      
 if datestr == 'tomorrow':
     date = datetime.utcnow()
     # BUFR cycle
@@ -69,247 +73,253 @@ else:
         verif_date = datetime.strptime(datestr, '%Y%m%d')
     except:
         raise ValueError('Invalid date format entered (use YYYYMMDD).')
-
+ 
 # Override the INFILE values
 new_start_date = datetime.strftime(verif_date, '%Y%m%d')
 new_end_date = datetime.strftime(verif_date, '%Y%m%d')
 config['data_start_date'] = new_start_date
 config['data_end_date'] = new_end_date
-
-
+    
 # Retrieve data
+if config['multi_stations']: #if using multiple stations
+    station_ids = config['station_id']
+    bufr_file = ['%s/%s_%s_bufr.pkl' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    obs_file = ['%s/%s_%s_obs.pkl' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    csv_file = ['%s/%s_%s_obs.csv' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    station_ids_str = ''
+    for station_id in station_ids:
+        station_ids_str += station_id + '_'
+    station_ids_str = station_ids_str[:-1]
+    predictor_file = '%s/%s_%s_predictors.pkl' % (config['SITE_ROOT'], station_ids_str, new_end_date)
+else:
+    station_ids = [config['station_id']]
+    bufr_file = '%s/%s_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    obs_file = '%s/%s_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    csv_file = '%s/%s_%s_obs.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date)   
+    predictor_file = '%s/%s_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+        
+    print('\n--- MOS-X run: retrieving BUFR data...\n')
+    print('Using model cycle %sZ' % cycle)
+    mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
-bufr_file = '%s/%s_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-print('\n--- MOS-X run: retrieving BUFR data...\n')
-print('Using model cycle %sZ' % cycle)
-mosx.bufr.bufr(config, bufr_file, cycle=cycle)
+    print('\n--- MOS-X run: retrieving OBS data...\n')
+    mosx.obs.obs(config, obs_file, csv_file, use_nan_sounding=True, use_existing_sounding=False)
 
-obs_file = '%s/%s_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-obs_csv_file = '%s/%s_%s_obs.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-print('\n--- MOS-X run: retrieving OBS data...\n')
-mosx.obs.obs(config, obs_file, obs_csv_file, use_nan_sounding=True, use_existing_sounding=False)
+    # Format data
+    print('\n--- MOS-X run: formatting predictor data...\n')
+    mosx.model.format_predictors(config, bufr_file, obs_file, None, predictor_file)
 
-
-# Format data
-
-predictor_file = '%s/%s_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-print('\n--- MOS-X run: formatting predictor data...\n')
-mosx.model.format_predictors(config, bufr_file, obs_file, None, predictor_file)
-
-
-# Make a prediction!
-
-print('\n--- MOS-X run: making the forecast...\n')
-predicted, all_predicted, predicted_timeseries = mosx.model.model.predict_all(config, predictor_file, ensemble=prob,
+    # Make a prediction!
+    print('\n--- MOS-X run: making the forecast...\n')
+    predicted, all_predicted, predicted_timeseries = mosx.model.predict_all(config, predictor_file, ensemble=prob,
                                                                               time_series_date=verif_date,
                                                                               naive_rain_correction=options.tune_rain,
                                                                               round_result=not prob)
-if options.avg_rain:
-    no_tuned_predictions = mosx.model.model.predict_all(config, predictor_file, ensemble=prob,
+    if options.avg_rain:
+        no_tuned_predictions = mosx.model.predict_all(config, predictor_file, ensemble=prob,
                                                         time_series_date=verif_date,
                                                         naive_rain_correction=options.tune_rain, round_result=not prob,
                                                         rain_tuning=False)
-
-predicted = np.squeeze(predicted)
-if options.avg_rain:
-    no_tuned_rain = no_tuned_predictions[0][0, 3]
-    print('Adjusting rain estimate to average of raw (%0.2f) and tuned (%0.2f) values' %
-          (no_tuned_rain, predicted[3]))
-    predicted[3] = np.mean([predicted[3], no_tuned_rain])
-
-
-# Print forecast!
-
-print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
-
-print('\nFor day %s at %s, the predicted forecast is' % (new_end_date,
-                                                         config['station_id']))
-print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[:4]))
-
-if prob:
-    predicted_std = np.squeeze(np.std(all_predicted, axis=-1))
-    predicted_display = []
-    for v in range(4):
-        predicted_display.append(predicted[v])
-        predicted_display.append(predicted_std[v])
-    print('\nPredicted forecast with standard deviation is')
-    print('%0.1f+/-%0.1f | %0.1f+/-%0.1f | %0.1f+/-%0.1f | %0.3f+/-%0.3f' % tuple(predicted_display))
-    print('\nNote that the reported rain above may be adjusted from raw model output.')
-
-if config['Model']['predict_timeseries']:
-    print('\nPredicted time series:')
-    print(predicted_timeseries)
+                                                        
+    print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
+    for i in range(len(station_ids)):
+        station_id = station_ids[i]
+        predicted_one = np.squeeze(predicted[i])
+        if options.avg_rain:
+            no_tuned_rain = no_tuned_predictions[0][i][0, 3]
+            print('Adjusting rain estimate to average of raw (%0.2f) and tuned (%0.2f) values for %s' %
+              (no_tuned_rain, predicted_one[3], station_id))
+            predicted_one[3] = np.mean([predicted_one[3], no_tuned_rain])
 
 
-# Write the forecast, if requested
+        # Print forecast!
+        print('\nFor day %s at %s, the predicted forecast is' % (new_end_date,
+                                                         station_id))
+        print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted_one[:4]))
 
-if write_flag:
-    file_types = config['Upload']['file_type']
-    write_files = []
-    if not isinstance(file_types, list):
-        file_types = [file_types]
+        if prob:
+            predicted_std = np.squeeze(np.std(all_predicted[i], axis=-1))
+            predicted_display = []
+            for v in range(4):
+                predicted_display.append(predicted_one[v])
+                predicted_display.append(predicted_std[v])
+            print('\nPredicted forecast with standard deviation is')
+            print('%0.1f+/-%0.1f | %0.1f+/-%0.1f | %0.1f+/-%0.1f | %0.3f+/-%0.3f' % tuple(predicted_display))
+            print('\nNote that the reported rain above may be adjusted from raw model output.')
 
-    for file_type in file_types:
-        if file_type == 'pickle':
-            if write_base == 'default':
-                write_file = '%s/%s_MOSX_fcst.pkl' % (config['SITE_ROOT'], config['station_id'])
-            else:
-                write_file = '%s.pkl' % write_base
-            print('\nForecast write requested, writing to file %s' % write_file)
-            # Check if pickle file already exists
-            try:
-                with open(write_file, 'rb') as handle:
-                    data = pickle.load(handle)
-            except:
-                data = OrderedDict()
+        if config['Model']['predict_timeseries']:
+            print('\nPredicted time series:')
+            print(predicted_timeseries[i])
 
-            data[verif_date] = {
-                                'high': np.round(predicted[0]),
-                                'low': np.round(predicted[1]),
-                                'wind': np.round(predicted[2]),
-                                'precip': np.round(predicted[3], 2)
+
+        # Write the forecast, if requested
+        if write_flag:
+            file_types = config['Upload']['file_type']
+            write_files = []
+            if not isinstance(file_types, list):
+                file_types = [file_types]
+
+            for file_type in file_types:
+                if file_type == 'pickle':
+                    if write_base == 'default':
+                        write_file = '%s/%s_MOSX_fcst.pkl' % (config['SITE_ROOT'], station_id)
+                    else:
+                        write_file = '%s.pkl' % write_base[i]
+                    print('\nForecast write requested, writing to file %s' % write_file)
+                    # Check if pickle file already exists
+                    try:
+                        with open(write_file, 'rb') as handle:
+                            data = pickle.load(handle)
+                    except:
+                        data = OrderedDict()
+
+                    data[verif_date] = {
+                                'high': np.round(predicted_one[0]),
+                                'low': np.round(predicted_one[1]),
+                                'wind': np.round(predicted_one[2]),
+                                'precip': np.round(predicted_one[3], 2)
                                }
 
-            if config['Model']['predict_timeseries']:
-                data[verif_date].update(predicted_timeseries.to_dict(into=OrderedDict))
+                    if config['Model']['predict_timeseries']:
+                        data[verif_date].update(predicted_timeseries[i].to_dict(into=OrderedDict))
 
-            with open(write_file, 'wb') as handle:
-                pickle.dump(data, handle, protocol=2)
+                    with open(write_file, 'wb') as handle:
+                        pickle.dump(data, handle, protocol=2)
 
-        elif file_type == 'uw_text':
-            write_file = 'MOS-X.%s' % new_end_date
-            print('\nForecast write requested, writing to file %s' % write_file)
-            if config['Model']['rain_forecast_type'] != 'pop':
-                print('Warning: model rain prediction is not probability! Expect unusual output!')
-            high = np.round(predicted[0])
-            rain = np.round(10. * predicted[3])
-            line = 'MOS-X,%0.0f,%0.0f' % (high, rain)
-            with open(write_file, 'w') as f:
-                f.write(line)
+                elif file_type == 'uw_text':
+                    write_file = 'MOS-X.%s' % new_end_date
+                    print('\nForecast write requested, writing to file %s' % write_file)
+                    if config['Model']['rain_forecast_type'] != 'pop':
+                        print('Warning: model rain prediction is not probability! Expect unusual output!')
+                    high = np.round(predicted_one[0])
+                    rain = np.round(10. * predicted_one[3])
+                    line = 'MOS-X,%0.0f,%0.0f' % (high, rain)
+                    with open(write_file, 'w') as f:
+                        f.write(line)
 
-        elif file_type == 'json':
-            if write_base == 'default':
-                write_file = '%s/MOSX_%s_%s.json' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-            else:
-                write_file = '%s.json' % write_base
-            print('\nForecast write requested, writing to file %s' % write_file)
-            data = OrderedDict()
-            data['daily'] = {
-                'high': np.round(predicted[0]),
-                'low': np.round(predicted[1]),
-                'wind': np.round(predicted[2]),
-                'precip': np.round(predicted[3], 2)
-            }
+                elif file_type == 'json':
+                    if write_base == 'default':
+                        write_file = '%s/MOSX_%s_%s.json' % (config['SITE_ROOT'], station_id, new_end_date)
+                    else:
+                        write_file = '%s.json' % write_base
+                    print('\nForecast write requested, writing to file %s' % write_file)
+                    data = OrderedDict()
+                    data['daily'] = {
+                    'high': np.round(predicted_one[0]),
+                    'low': np.round(predicted_one[1]),
+                    'wind': np.round(predicted_one[2]),
+                    'precip': np.round(predicted_one[3], 2)
+                    }
 
-            if config['Model']['predict_timeseries']:
-                data['hourly'] = predicted_timeseries.to_dict(into=OrderedDict, orient='list')
-                data['hourly']['DateTime'] = [str(p) for p in predicted_timeseries.index]
+                    if config['Model']['predict_timeseries']:
+                        data['hourly'] = predicted_timeseries[i].to_dict(into=OrderedDict, orient='list')
+                        data['hourly']['DateTime'] = [str(p) for p in predicted_timeseries[i].index]
 
-            with open(write_file, 'w') as f:
-                json.dump(data, f)
+                    with open(write_file, 'w') as f:
+                        json.dump(data, f)
 
-        write_files.append(write_file)
+                write_files.append(write_file)
 
 
-# Make plots of probability distributions
+        # Make plots of probability distributions
 
-if prob:
-    # Imports
-    import matplotlib
-    import matplotlib.pyplot as plt
-    import matplotlib.gridspec as gs
-    import matplotlib.ticker as ticker
-    from scipy.stats import norm
-    matplotlib.rcParams.update({'font.size': 9})
+        if prob:
+            # Imports
+            import matplotlib
+            import matplotlib.pyplot as plt
+            import matplotlib.gridspec as gs
+            import matplotlib.ticker as ticker
+            from scipy.stats import norm
+            matplotlib.rcParams.update({'font.size': 9})
 
-    prob_file = '%s/%s_MOSX_prob.svg' % (config['SITE_ROOT'], config['station_id'])
+            prob_file = '%s/%s_MOSX_prob.svg' % (config['SITE_ROOT'], station_id)
 
-    def plot_probabilities(predicted):
-        fig = plt.figure()
-        fig.set_size_inches(8, 6)
-        gs1 = gs.GridSpec(2, 2)
-        gs1.update(wspace=0.18, hspace=0.18)
+            def plot_probabilities(predicted):
+                fig = plt.figure()
+                fig.set_size_inches(8, 6)
+                gs1 = gs.GridSpec(2, 2)
+                gs1.update(wspace=0.18, hspace=0.18)
 
-        def plot_histogram(subplot_num, x, unit=1., facecolor='b', bins=None, align='left',
+                def plot_histogram(subplot_num, x, unit=1., facecolor='b', bins=None, align='left',
                            xtickint=None, decimals=1, title=None):
-            global fig
-            ax = plt.subplot(subplot_num)
+                    global fig
+                    ax = plt.subplot(subplot_num)
 
-            if bins is None:
-                bins = max(int(np.nanmax(x)/unit - np.nanmin(x)/unit), 1)
-            n, bins, patches = plt.hist(x, bins=bins, facecolor=facecolor, normed=True, align=align,)
-            x_axis = np.linspace(np.nanmin(x), np.nanmax(x), 101)
-            x_mean = np.nanmean(x)
-            x_std = np.nanstd(x)
-            normal = norm.pdf(x_axis, x_mean, x_std)
-            plt.plot(x_axis, normal)
-            if xtickint is not None:
-                ax.xaxis.set_major_locator(ticker.MultipleLocator(xtickint))
-            ylim = ax.get_ylim()
-            if ylim[1] - np.nanmax(n) < 0.005:
-                ax.set_ylim([ylim[0], ylim[1]+0.005])
-            ax.set_yticklabels(['{:.1f}'.format(100.*l*unit) for l in plt.yticks()[0]])
-            if plot_num % 2 == 0:
-                ax.set_ylabel('Frequency (%)')
-            plt.axvline(x_mean, linewidth=1.5, color='black')
-            formatter = '%0.{:d}f'.format(decimals)
-            text = ('Mean: %s\nStd: %s' % (formatter, formatter)) % (x_mean, x_std)
-            plt.text(x_mean+unit/2, 0.9*np.nanmax(n), text, fontsize=8)
-            if title is not None:
-                ax.set_title(title)
-            return
+                    if bins is None:
+                        bins = max(int(np.nanmax(x)/unit - np.nanmin(x)/unit), 1)
+                    n, bins, patches = plt.hist(x, bins=bins, facecolor=facecolor, normed=True, align=align,)
+                    x_axis = np.linspace(np.nanmin(x), np.nanmax(x), 101)
+                    x_mean = np.nanmean(x)
+                    x_std = np.nanstd(x)
+                    normal = norm.pdf(x_axis, x_mean, x_std)
+                    plt.plot(x_axis, normal)
+                    if xtickint is not None:
+                        ax.xaxis.set_major_locator(ticker.MultipleLocator(xtickint))
+                    ylim = ax.get_ylim()
+                    if ylim[1] - np.nanmax(n) < 0.005:
+                        ax.set_ylim([ylim[0], ylim[1]+0.005])
+                    ax.set_yticklabels(['{:.1f}'.format(100.*l*unit) for l in plt.yticks()[0]])
+                    if plot_num % 2 == 0:
+                        ax.set_ylabel('Frequency (%)')
+                    plt.axvline(x_mean, linewidth=1.5, color='black')
+                    formatter = '%0.{:d}f'.format(decimals)
+                    text = ('Mean: %s\nStd: %s' % (formatter, formatter)) % (x_mean, x_std)
+                    plt.text(x_mean+unit/2, 0.9*np.nanmax(n), text, fontsize=8)
+                    if title is not None:
+                        ax.set_title(title)
+                    return
 
-        colors = [(0.1, 0.6, 0.4),
+                colors = [(0.1, 0.6, 0.4),
                   (0.6, 0.1, 0.4),
                   (0.2, 0.4, 0.8),
                   (0.8, 0.7, 0.1)]
-        titles = ['High temperature', 'Low temperature', 'Max 2-min wind', 'Precipitation']
-        for plot_num in range(4):
-            if plot_num != 3:
-                unit = 1.
-                decimals = 1
-            elif config['Model']['rain_forecast_type'] == 'pop':
-                unit = 0.1
-                decimals = 2
-            elif config['Model']['rain_forecast_type'] == 'categorical':
-                unit = 1.
-                decimals = 1
-            elif config['Model']['rain_forecast_type'] == 'quantity':
-                unit = 0.05
-                decimals = 3
-            plot_histogram(gs1[plot_num], predicted[plot_num, :], unit, facecolor=colors[plot_num],
+                titles = ['High temperature', 'Low temperature', 'Max 2-min wind', 'Precipitation']
+                for plot_num in range(4):
+                    if plot_num != 3:
+                        unit = 1.
+                        decimals = 1
+                    elif config['Model']['rain_forecast_type'] == 'pop':
+                        unit = 0.1
+                        decimals = 2
+                    elif config['Model']['rain_forecast_type'] == 'categorical':
+                        unit = 1.
+                        decimals = 1
+                    elif config['Model']['rain_forecast_type'] == 'quantity':
+                        unit = 0.05
+                        decimals = 3
+                    plot_histogram(gs1[plot_num], predicted[plot_num, :], unit, facecolor=colors[plot_num],
                            decimals=decimals, title=titles[plot_num])
 
-        verif_date_str = datetime.strftime(verif_date, '%Y/%m/%d')
-        plt.suptitle('MOS-X probability distributions, %s on %s' % (config['station_id'], verif_date_str))
-        plt.savefig(prob_file, dpi=200)
+                verif_date_str = datetime.strftime(verif_date, '%Y/%m/%d')
+                plt.suptitle('MOS-X probability distributions, %s on %s' % (config['station_id'], verif_date_str))
+                plt.savefig(prob_file, dpi=200)
 
-    plot_probabilities(np.squeeze(all_predicted))
+            plot_probabilities(np.squeeze(all_predicted[i]))
 
 
-# Upload, if requested
+        # Upload, if requested
 
-if upload and write_flag:
-    print('\nUpload requested...')
-    account = config['Upload']['username']
-    server = config['Upload']['server']
-    forecast_dir = config['Upload']['forecast_directory']
-    plot_dir = config['Upload']['plot_directory']
-    if account == '' and server == '':
-        if forecast_dir != '':
-            for write_file in write_files:
-                copy2(write_file, '%s/%s' % (forecast_dir, write_file.split('/')[-1]))
-        else:
-            print('No local directory specified for forecast upload, aborting')
-        if prob and plot_dir != '':
-            copy2(prob_file, '%s/%s' % (plot_dir, prob_file.split('/')[-1]))
-        else:
-            print('No local directory specified for plot upload, aborting')
-    elif account == '' or server == '':
-        print('Invalid username and/or server in config file, aborting')
-    else:
-        for write_file in write_files:
-            result = os.system('scp %s %s@%s:%s' % (write_file, account, server, forecast_dir))
-        if prob:
-            os.system('scp %s %s@%s:%s' % (prob_file, account, server, plot_dir))
-        print('Upload finished with system exit status %s' % result)
+        if upload and write_flag:
+            print('\nUpload requested...')
+            account = config['Upload']['username']
+            server = config['Upload']['server']
+            forecast_dir = config['Upload']['forecast_directory']
+            plot_dir = config['Upload']['plot_directory']
+            if account == '' and server == '':
+                if forecast_dir != '':
+                    for write_file in write_files:
+                        copy2(write_file, '%s/%s' % (forecast_dir, write_file.split('/')[-1]))
+                else:
+                    print('No local directory specified for forecast upload, aborting')
+                if prob and plot_dir != '':
+                    copy2(prob_file, '%s/%s' % (plot_dir, prob_file.split('/')[-1]))
+                else:
+                    print('No local directory specified for plot upload, aborting')
+            elif account == '' or server == '':
+                print('Invalid username and/or server in config file, aborting')
+            else:
+                for write_file in write_files:
+                    result = os.system('scp %s %s@%s:%s' % (write_file, account, server, forecast_dir))
+                if prob:
+                    os.system('scp %s %s@%s:%s' % (prob_file, account, server, plot_dir))
+                print('Upload finished with system exit status %s' % result)
