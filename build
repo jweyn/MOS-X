@@ -34,17 +34,29 @@ except IndexError:
     sys.exit(1)
 config = mosx.util.get_config(config_file)
 
-
+if config['multi_stations']: #if using multiple stations
+    station_ids = config['station_id']
+    bufr_file = ['%s/%s_bufr_train.pkl' % (config['SITE_ROOT'], station_id) for station_id in station_ids]
+    obs_file = ['%s/%s_obs_train.pkl' % (config['SITE_ROOT'], station_id) for station_id in station_ids]
+    csv_file = ['%s/%s_obs_train.csv' % (config['SITE_ROOT'], station_id) for station_id in station_ids]
+    verif_file = ['%s/%s_verif_train.pkl' % (config['SITE_ROOT'], station_id) for station_id in station_ids]
+    station_ids_str = ''
+    for i in range(len(station_ids)):
+        station_id = station_ids[i]
+        station_ids_str += station_id + '_'
+    station_ids_str = station_ids_str[:-1]
+    predictor_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], station_ids_str)
+    estimator_files = config['Model']['estimator_file']
+else:
+    station_ids = [config['station_id']]
+    bufr_file = '%s/%s_bufr_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+    obs_file = '%s/%s_obs_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+    csv_file = '%s/%s_obs_train.csv' % (config['SITE_ROOT'], config['station_id'])
+    verif_file = '%s/%s_verif_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+    predictor_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+    estimator_files = [config['Model']['estimator_file']]
+        
 # Retrieve data; parallelize BUFR and OBS
-
-bufr_file = '%s/%s_bufr_train.pkl' % (config['SITE_ROOT'], config['station_id'])
-obs_file = '%s/%s_obs_train.pkl' % (config['SITE_ROOT'], config['station_id'])
-obs_csv_file = '%s/%s_obs_train.csv' % (config['SITE_ROOT'], config['station_id'])
-verif_file = '%s/%s_verif_train.pkl' % (config['SITE_ROOT'], config['station_id'])
-verif_csv_file = '%s/%s_verif_train.csv' % (config['SITE_ROOT'], config['station_id'])
-predictor_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
-
-
 def get_bufr():
     print('\n--- MOS-X build: initiating BUFR data retrieval...\n')
     mosx.bufr.bufr(config, bufr_file)
@@ -52,7 +64,7 @@ def get_bufr():
 
 def get_obs():
     print('\n--- MOS-X build: initiating OBS data retrieval...\n')
-    mosx.obs.obs(config, obs_file, obs_csv_file)
+    mosx.obs.obs(config, obs_file, csv_file)
 
 
 if not use_existing:
@@ -66,9 +78,9 @@ if not use_existing:
 
     print('\n--- MOS-X build: retrieving VERIF data...\n')
     if config['Obs']['use_climo_wind']:
-        mosx.verification.verification(config, verif_file, verif_csv_file)
+        mosx.verification.verification(config, verif_file, csv_file)
     else:
-        mosx.verification.verification(config, verif_file, verif_csv_file, use_climo=False, use_cf6=False)
+        mosx.verification.verification(config, verif_file, csv_file, use_climo=False, use_cf6=False)
 
 # Re-format predictors even if using existing raw data
 print('\n--- MOS-X build: formatting predictor and target data...\n')
@@ -79,29 +91,29 @@ mosx.model.format_predictors(config, bufr_file, obs_file, verif_file, predictor_
 
 print('\n--- MOS-X build: generating and training estimator...\n')
 
-p_test, t_test, r_test = mosx.model.train(config, predictor_file, config['Model']['estimator_file'], test_size=1)
+p_test, t_test, r_test = mosx.model.train(config, predictor_file, test_size=1)
 
 
 # Test the predictor
 
 print('\n--- MOS-X build: predicting for a test of 1 day...\n')
-
-print('Loading estimator file %s' % config['Model']['estimator_file'])
-with open(config['Model']['estimator_file'], 'rb') as handle:
-    estimator = pickle.load(handle)
 rain_tuning = config['Model'].get('Rain tuning', None)
 
-# Make a prediction
-expected = t_test
-if rain_tuning is not None and mosx.util.to_bool(rain_tuning.get('use_raw_rain', False)):
-    predicted = estimator.predict(p_test, rain_array=r_test)
-else:
-    predicted = estimator.predict(p_test)
+# Make a prediction for each station
+for i in range(len(station_ids)):
+    expected = t_test[i]
+    estimator_file = estimator_files[i]
+    print('Loading estimator file %s' % estimator_file)
+    estimator = mosx.util.read_pkl(estimator_file)
+    if rain_tuning is not None and mosx.util.to_bool(rain_tuning.get('use_raw_rain', False)):
+        predicted = estimator.predict(p_test[i], rain_array=r_test[i])
+    else:
+        predicted = estimator.predict(p_test[i])
 
-num_test = t_test.shape[0]
-for t in range(num_test):
-    print('\nFor day %d, the predicted forecast is' % t)
-    print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[t, :4]))
-    print('  while the verification was')
-    print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(expected[t, :4]))
+    num_test = expected.shape[0]
+    for t in range(num_test):
+        print('\nFor day %d, the predicted forecast is' % t)
+        print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[t, :4]))
+        print('  while the verification was')
+        print('%0.0f/%0.0f/%0.0f/%0.2f' % tuple(expected[t, :4]))
 
