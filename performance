@@ -205,17 +205,29 @@ predict_timeseries = config['Model']['predict_timeseries']
 if predict_timeseries:
     config['Model']['predict_timeseries'] = False
 
-predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'],
+if config['multi_stations']: #if using multiple stations
+    station_ids = config['station_id']
+    station_ids_str = ''
+    for station_id in station_ids:
+        station_ids_str += station_id + '_'
+    station_ids_str = station_ids_str[:-1]
+    train_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], station_ids_str)
+    predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], station_ids_str, config['Validate']['end_date'])
+    fig_names = ['%s/%s_learning_curve.pdf' % (config['SITE_ROOT'], station_id) for station_id in station_ids]
+else:
+    station_ids = [config['station_id']]
+    train_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
+    predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'],
                                                  config['Validate']['end_date'])
+    fig_names = '%s/%s_learning_curve.pdf' % (config['SITE_ROOT'], station_id)
+
 if not(os.path.isfile(predictor_file)):
     print("Cannot find validation predictors file '%s'. Please run 'validate' first." % predictor_file)
     sys.exit(1)
 
 
 # Open predictors file from validate
-
-with open(predictor_file, 'rb') as handle:
-    predictors = pickle.load(handle)
+predictors = mosx.util.read_pkl(predictor_file)
 predictor_array = np.concatenate((predictors['BUFKIT'], predictors['OBS']), axis=1)
 true_array = predictors['VERIF']
 
@@ -228,83 +240,77 @@ if options.avg_rain:
     print('Using average of raw and rain-tuned precipitation forecasts')
     no_tuned_predictions = mosx.model.predict_all(config, predictor_file, naive_rain_correction=options.tune_rain,
                                                   rain_tuning=False)
-    predicted = np.mean([predicted, no_tuned_predictions[0]], axis=0)
-
+# Optional learning curve plot
+if options.learning:
+    print("\n--- MOS-X performance: exporting learning curve figures...\n")
+    scorer = mosx.model.wxchallenge_scorer(no_rain=False)
+    figures = mosx.model.plot_learning_curve(config, train_file, predictor_file,
+                                          scoring=scorer, fig_names=fig_names, save_fig=True)
+                                          
 
 # Calculate general performance scores
+for i in range(len(station_ids)):
+    print('\n--- MOS-X performance: generating global performance scores...\n')
+    station_id = station_ids[i]
+    if options.avg_rain:
+        predicted_one = np.mean([predicted[i], no_tuned_predictions[0][i]], axis=0)
+    else:
+        predicted_one = predicted[i]
+            
+    multi = 'raw_values'
+    scores = np.nan * np.zeros((7, 4))
+    scores[0] = explained_variance_score(true_array[i][:, :4], predicted_one[:, :4], multioutput=multi)
+    scores[1] = mean_absolute_error(true_array[i][:, :4], predicted_one[:, :4], multioutput=multi)
+    scores[2] = mean_squared_error(true_array[i][:, :4], predicted_one[:, :4], multioutput=multi)
+    scores[3] = r2_score(true_array[i][:, :4], predicted_one[:, :4], multioutput=multi)
 
-print('\n--- MOS-X performance: generating global performance scores...\n')
-multi = 'raw_values'
-scores = np.nan * np.zeros((7, 4))
-scores[0] = explained_variance_score(true_array[:, :4], predicted[:, :4], multioutput=multi)
-scores[1] = mean_absolute_error(true_array[:, :4], predicted[:, :4], multioutput=multi)
-scores[2] = mean_squared_error(true_array[:, :4], predicted[:, :4], multioutput=multi)
-scores[3] = r2_score(true_array[:, :4], predicted[:, :4], multioutput=multi)
+    if config['Model']['rain_forecast_type'] in ['pop', 'categorical']:
+        # Try to get probabilities for each category of rain
+        print('MOS-X performance: making probabilistic rain predictions...')
+        rain_prob = mosx.model.predict_rain_proba(config, predictor_file)
+        lb = LabelBinarizer()
+        rain_categories = lb.fit_transform(true_array[i][:, 3])
+        scores[4, 3] = brier_score(rain_categories, rain_prob)
 
-if config['Model']['rain_forecast_type'] in ['pop', 'categorical']:
-    # Try to get probabilities for each category of rain
-    print('MOS-X performance: making probabilistic rain predictions...')
-    rain_prob = mosx.model.predict_rain_proba(config, predictor_file)
-    lb = LabelBinarizer()
-    rain_categories = lb.fit_transform(true_array[:, 3])
-    scores[4, 3] = brier_score(rain_categories, rain_prob)
+    if options.ensemble:
+        scores[5] = mean_variance(all_predicted[i][:, :4, :])
 
-if options.ensemble:
-    scores[5] = mean_variance(all_predicted[:, :4, :])
+    if options.ensemble and crps:
+        scores[6] = np.mean(crps_ensemble(true_array[i][:, :4], all_predicted[i][:, :4, :], axis=-1), axis=0)
 
-if options.ensemble and crps:
-    scores[6] = np.mean(crps_ensemble(true_array[:, :4], all_predicted[:, :4, :], axis=-1), axis=0)
-
-scores_df = pd.DataFrame(scores)
-score_names = ['Explained variance score', 'Mean absolute bias', 'Mean squared bias',
+    scores_df = pd.DataFrame(scores)
+    score_names = ['Explained variance score', 'Mean absolute bias', 'Mean squared bias',
                'R^2 coefficient of determination', 'Brier score', 'Mean ensemble variance', 'CRPS']
-score_columns = ['High', 'Low', 'Wind', 'Rain']
-scores_df.index = score_names
-scores_df.columns = score_columns
+    score_columns = ['High', 'Low', 'Wind', 'Rain']
+    scores_df.index = score_names
+    scores_df.columns = score_columns
 
-print('\n')
-print(scores_df)
+    print('\n')
+    print(scores_df)
 
+    # Optional spread-skill plot
 
-# Optional learning curve plot
-
-if options.learning:
-    print("\n--- MOS-X performance: exporting learning curve figure to 'learning_curve.pdf'...\n")
-    train_file = '%s/%s_predictors_train.pkl' % (config['SITE_ROOT'], config['station_id'])
-    predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'],
-                                                     config['Validate']['end_date'])
-    predictors, targets, n_samples_test = mosx.model.combine_train_test(config, train_file, predictor_file,
-                                                                        return_count_test=True)
-    cv = mosx.model.SplitConsecutive(first=False, n_samples=n_samples_test)
-    scorer = mosx.model.wxchallenge_scorer(no_rain=True)
-    figure = mosx.model._plot_learning_curve(mosx.model.build_estimator(config), predictors, targets, cv=cv,
-                                          scoring=scorer)
-    plt.savefig('learning_curve.pdf', bbox_inches='tight')
+    if options.spread_skill and options.ensemble:
+        print("\n--- MOS-X performance: exporting spread-skill figure to '%s_spread_skill.pdf'...\n" % station_id)
+        figure = plot_spread_skill(all_predicted[i], true_array[i], )
+        plt.savefig('%s_spread_skill.pdf' % station_id, bbox_inches='tight')
+    elif options.spread_skill:
+        print("warning: '--spread-skill' option enabled but no ensemble predictions (--ensemble) were enabled!")
 
 
-# Optional spread-skill plot
+    # Optional rank histograms plot
 
-if options.spread_skill and options.ensemble:
-    print("\n--- MOS-X performance: exporting spread-skill figure to 'spread_skill.pdf'...\n")
-    figure = plot_spread_skill(all_predicted, true_array, )
-    plt.savefig('spread_skill.pdf', bbox_inches='tight')
-elif options.spread_skill:
-    print("warning: '--spread-skill' option enabled but no ensemble predictions (--ensemble) were enabled!")
-
-
-# Optional rank histograms plot
-
-if options.histogram and options.ensemble:
-    print("\n--- MOS-X performance: exporting rank histogram figure to 'rank_histogram.pdf'...\n")
-    figure = plot_rank_histogram(all_predicted, true_array, )
-    plt.savefig('rank_histogram.pdf', bbox_inches='tight')
-elif options.histogram:
-    print("warning: '--rank-histogram' option enabled but no ensemble predictions (--ensemble) were enabled!")
+    if options.histogram and options.ensemble:
+        print("\n--- MOS-X performance: exporting rank histogram figure to '%s_rank_histogram.pdf'...\n" % station_id)
+        figure = plot_rank_histogram(all_predicted[i], true_array[i], )
+        plt.savefig('%s_rank_histogram.pdf' % station_id, bbox_inches='tight')
+    elif options.histogram:
+        print("warning: '--rank-histogram' option enabled but no ensemble predictions (--ensemble) were enabled!")
 
 
-# Optional error distribution plot
+    # Optional error distribution plot
 
-if options.error_plot:
-    print("\n--- MOS-X performance: exporting error distribution figure to 'error_distribution.pdf'...\n")
-    figure = plot_error(predicted, true_array, )
-    plt.savefig('error_distribution.pdf', bbox_inches='tight')
+    if options.error_plot:
+        print("\n--- MOS-X performance: exporting error distribution figure to '%s_error_distribution.pdf'...\n" % station_id)
+        figure = plot_error(predicted_one, true_array[i], )
+        plt.savefig('%s_error_distribution.pdf' % station_id, bbox_inches='tight')
