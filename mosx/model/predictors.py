@@ -33,16 +33,17 @@ class PredictorDict(dict):
         :param rain_array:
         :return:
         """
-        rain_array[pd.isnull(rain_array)] = 0.
+        rain_array[np.isnan(rain_array)] = 0.
 
         if 'BUFKIT' in self.keys():
             if isinstance(self['BUFKIT'], np.ndarray):
-                if self['BUFKIT'].shape[0] != rain_array.shape[0]:
-                    raise ValueError('rain_array and BUFKIT array must have the same sample size; got %s and %s' %
-                                     (rain_array.shape[0], self['BUFKIT'].shape[0]))
+                for i in range(len(rain_array)): #check for each station
+                    if self['BUFKIT'].shape[0] != rain_array[i].shape[0]:
+                        raise ValueError('rain_array and BUFKIT array must have the same sample size; got %s and %s' %
+                                     (rain_array[i].shape[0], self['BUFKIT'].shape[0]))
         self.rain = rain_array
 
-def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None, return_dates=False):
+def format_predictors(config, bufr_files, obs_files, verif_files, output_file=None, return_dates=False):
     """
     Generates a complete date-by-x array of data for ingestion into the machine learning estimator. verif_file may be
     None if creating a set to run the model.
@@ -54,12 +55,12 @@ def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None,
     :param return_dates: if True, returns all of the matching dates used to produce the predictor arrays
     :return: optionally a list of dates and a list of lists of precipitation values
     """
-    bufr, obs, verif = unpickle(bufr_file, obs_file, verif_file)
+    bufr, obs, verif = unpickle(bufr_files, obs_files, verif_files)
     bufr, obs, verif, all_dates = find_matching_dates(bufr, obs, verif, return_data=True)
     bufr_array = mosx.bufr.process(config, bufr)
     obs_array = mosx.obs.process(config, obs)
     verif_array = mosx.verification.process(config, verif)
-
+    
     export_dict = {
         'BUFKIT': bufr_array,
         'OBS': obs_array,
@@ -69,22 +70,25 @@ def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None,
 
     # Get raw precipitation values and add them to the PredictorDict
     precip_list = []
-    for date in all_dates:
-        precip = []
-        items = list(bufr.items())
-        for item in items:
-            if item[0] == b'DAY' or item[0] == 'DAY':
-                bufr_day = item[1]
-        for model in bufr_day.keys():
-            try:
-                precip.append(bufr_day[model][date][-1] / 25.4)  # mm to inches
-            except KeyError: #date doesn't exist
-                pass
-        precip_list.append(precip)
+    for bufr_one in bufr:
+        precip_one = []
+        for date in all_dates:
+            precip = []
+            items = list(bufr_one.items())
+            for item in items:
+                if item[0] == b'DAY' or item[0] == 'DAY':
+                    bufr_day = item[1]
+            for model in bufr_day.keys():
+                try:
+                    precip.append(bufr_day[model][date][-1] / 25.4)  # mm to inches
+                except KeyError: #date doesn't exist
+                    pass
+            precip_one.append(precip)
+        precip_list.append(np.array(precip_one))
     export_dict.add_rain(np.array(precip_list))
-
+    
     if output_file is None:
-        output_file = '%s/%s_predictors.pkl' % (config['site_directory'], config['station_id'])
+        output_file = '%s/output_predictors.pkl' % (config['site_directory'])
     print('predictors: -> exporting to %s' % output_file)
     with open(output_file, 'wb') as handle:
         pickle.dump(export_dict, handle, protocol=2)
@@ -93,4 +97,3 @@ def format_predictors(config, bufr_file, obs_file, verif_file, output_file=None,
         return all_dates
     else:
         return
-        
