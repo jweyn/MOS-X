@@ -31,10 +31,10 @@ def get_command_options():
     parser.add_option('-r', '--rain-post-average', dest='avg_rain', action='store_true', default=False,
                       help='If using a RainTuningEstimator, this will average the raw estimation from an ensemble'
                            'with that of the rain tuning post-processor')
-    parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False, help='Write a CSV file')
-    default_file = './MOSX_CV.csv'
-    parser.add_option('-f', '--write-file', dest='write_file', action='store', type='string', default=default_file,
-                      help=('If -w is enabled, write to this file (default %s)' % default_file))
+    parser.add_option('-w', '--write', dest='write_flag', action='store_true', default=False, help='Write CSVs file (one for each station)')
+    default_file = None
+    parser.add_option('-f', '--write-file', dest='write_files', action='store', type='string', default=default_file,
+                      help=('If -w is enabled, write to these files'))
     (opts, args) = parser.parse_args()
     return opts, args
 
@@ -42,7 +42,7 @@ def get_command_options():
 # Figure out the date
 
 options, arguments = get_command_options()
-overwrite, write_flag, write_file = options.overwrite, options.write_flag, options.write_file
+overwrite, write_flag, write_files = options.overwrite, options.write_flag, options.write_files
 try:
     config_file = arguments[0]
 except IndexError:
@@ -63,72 +63,112 @@ config['data_end_date'] = new_end_date
 
 
 # Retrieve data
+if config['multi_stations']: #if using multiple stations
+    station_ids = config['station_id']
+    bufr_file = ['%s/%s_CV_%s_bufr.pkl' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    obs_file = ['%s/%s_CV_%s_obs.pkl' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    csv_file = ['%s/%s_CV_%s_obs.csv' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    verif_file = ['%s/%s_CV_%s_verif.pkl' % (config['SITE_ROOT'], station_id, new_end_date) for station_id in station_ids]
+    station_ids_str = ''
+    for i in range(len(station_ids)):
+        station_id = station_ids[i]
+        station_ids_str += station_id + '_'
+            
+        print('\n--- MOS-X validate: retrieving BUFR data...\n')
+        if os.path.isfile(bufr_file[i]) and not overwrite:
+            print('Using existing BUFR file %s' % bufr_file)
+            print('If issues occur, delete this file and try again')
+        else:
+            print('Using model cycle %sZ' % cycle)
+            mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
-bufr_file = '%s/%s_CV_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-print('\n--- MOS-X validate: retrieving BUFR data...\n')
-if os.path.isfile(bufr_file) and not overwrite:
-    print('Using existing BUFR file %s' % bufr_file)
-    print('If issues occur, delete this file and try again')
-else:
-    print('Using model cycle %sZ' % cycle)
-    mosx.bufr.bufr(config, bufr_file, cycle=cycle)
+    
+        print('\n--- MOS-X validate: retrieving OBS data...\n')
+        if os.path.isfile(obs_file[i]) and not overwrite:
+            print('Using existing obs file %s' % obs_file)
+            print('If issues occur, delete this file and try again')
+        else:
+            mosx.obs.obs(config, obs_file, use_nan_sounding=False)
 
-obs_file = '%s/%s_CV_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-print('\n--- MOS-X validate: retrieving OBS data...\n')
-if os.path.isfile(obs_file) and not overwrite:
-    print('Using existing obs file %s' % obs_file)
-    print('If issues occur, delete this file and try again')
-else:
-    mosx.obs.obs(config, obs_file, use_nan_sounding=False)
-
-verif_file = '%s/%s_CV_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
-print('\n--- MOS-X validate: retrieving VERIF data...\n')
-if os.path.isfile(verif_file) and not overwrite:
-    print('Using existing verif file %s' % verif_file)
-    print('If issues occur, delete this file and try again')
-else:
-    mosx.verification.verification(config, verif_file, use_climo=config['Obs']['use_climo_wind'],
+        print('\n--- MOS-X validate: retrieving VERIF data...\n')
+        if os.path.isfile(verif_file[i]) and not overwrite:
+            print('Using existing verif file %s' % verif_file)
+            print('If issues occur, delete this file and try again')
+        else:
+            mosx.verification.verification(config, verif_file, use_climo=config['Obs']['use_climo_wind'],
                                    use_cf6=config['Obs']['use_climo_wind'])
-with open(verif_file, 'rb') as handle:
-    verif = pickle.load(handle)
+    station_ids_str = station_ids_str[:-1]
+    predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], station_ids_str, new_end_date)
+        
+else: #just one station
+    station_ids = [config['station_id']]
+    bufr_file = '%s/%s_CV_%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    print('\n--- MOS-X validate: retrieving BUFR data...\n')
+    if os.path.isfile(bufr_file) and not overwrite:
+        print('Using existing BUFR file %s' % bufr_file)
+        print('If issues occur, delete this file and try again')
+    else:
+        print('Using model cycle %sZ' % cycle)
+        mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
+    obs_file = '%s/%s_CV_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    print('\n--- MOS-X validate: retrieving OBS data...\n')
+    if os.path.isfile(obs_file) and not overwrite:
+        print('Using existing obs file %s' % obs_file)
+        print('If issues occur, delete this file and try again')
+    else:
+        mosx.obs.obs(config, obs_file, use_nan_sounding=False)
+
+    verif_file = '%s/%s_CV_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    print('\n--- MOS-X validate: retrieving VERIF data...\n')
+    if os.path.isfile(verif_file) and not overwrite:
+        print('Using existing verif file %s' % verif_file)
+        print('If issues occur, delete this file and try again')
+    else:
+        mosx.verification.verification(config, verif_file, use_climo=config['Obs']['use_climo_wind'],
+                                   use_cf6=config['Obs']['use_climo_wind'])
+    predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 
 # Format data
-
 predictor_file = '%s/%s_CV_%s_predictors.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
 print('\n--- MOS-X validate: formatting predictor data...\n')
 all_dates = mosx.model.format_predictors(config, bufr_file, obs_file, verif_file, predictor_file,
                                          return_dates=True)
 
-
 # Make a prediction!
-
 predicted = mosx.model.predict(config, predictor_file,naive_rain_correction=options.tune_rain)
 if options.avg_rain:
     print('Using average of raw and rain-tuned precipitation forecasts')
     no_tuned_predictions = mosx.model.predict(config, predictor_file, naive_rain_correction=options.tune_rain,
                                               rain_tuning=False)
-    predicted = np.mean([predicted, no_tuned_predictions], axis=0)
 
 # Print forecasts!
-
 print("\nRain forecast type: '%s'" % config['Model']['rain_forecast_type'])
+for i in range(len(station_ids)):
+    station_id = station_ids[i]
+    predicted_one = predicted[i]
+    if options.avg_rain:
+        predicted_one = np.mean([predicted_one, no_tuned_predictions[i][0]], axis=0)
+    if config['multi_stations']:
+        verif = mosx.util.read_pkl(verif_file[i])
+    else:
+        verif = mosx.util.read_pkl(verif_file)
+            
+    print('\nDay,verification,forecast')
+    for day in range(len(all_dates)):
+        date = all_dates[day]
+        day_verif = [verif[date][v] for v in ['Tmax', 'Tmin', 'Wind', 'Rain']]
+        verif_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(day_verif)
+        fcst_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[day, :4])
+        print('%s,%s,%s' % (date, verif_str, fcst_str))
 
-print('\nDay,verification,forecast')
-for day in range(len(all_dates)):
-    date = all_dates[day]
-    day_verif = [verif[date][v] for v in ['Tmax', 'Tmin', 'Wind', 'Rain']]
-    verif_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(day_verif)
-    fcst_str = '%0.0f/%0.0f/%0.0f/%0.2f' % tuple(predicted[day, :4])
-    print('%s,%s,%s' % (date, verif_str, fcst_str))
 
+    # Write the forecast, if requested
 
-# Write the forecast, if requested
+    if write_flag:
+        print('\nForecast write requested, writing to file %s' % write_files[i])
 
-if write_flag:
-    print('\nForecast write requested, writing to file %s' % write_file)
-
-    with open(write_file, 'w') as f:
+    with open(write_files[i], 'w') as f:
         print >> f, 'date,verification,forecast'
         for day in range(len(all_dates)):
             date = all_dates[day]
