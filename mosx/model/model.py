@@ -10,6 +10,7 @@ Methods for training scikit-learn models.
 
 from datetime import datetime, timedelta
 import pandas as pd
+import os
 from mosx.util import get_object, to_bool, dewpoint, read_pkl
 from mosx.estimators import TimeSeriesEstimator, RainTuningEstimator, BootStrapEnsembleEstimator
 import pickle
@@ -90,7 +91,8 @@ def build_estimator(config):
         estimator = BootStrapEnsembleEstimator(estimator, **bootstrap)
 
     return estimator
-    
+
+
 def build_train_data(config, predictor_file, no_obs=False, no_models=False, test_size=0):
     """
     Build the array of training (and optionally testing) data.
@@ -102,7 +104,10 @@ def build_train_data(config, predictor_file, no_obs=False, no_models=False, test
     :return:
     """
     from sklearn.model_selection import train_test_split
-
+    if config['multi_stations']: #multiple stations
+        station_ids = config['station_id']
+    else:
+        station_ids = [config['station_id']] #just one station
     if config['verbose']:
         print('build_train_data: reading predictor file')
     rain_tuning = config['Model'].get('Rain tuning', None)
@@ -122,69 +127,83 @@ def build_train_data(config, predictor_file, no_obs=False, no_models=False, test
         predictors = data['OBS']
     else:
         predictors = np.concatenate((data['BUFKIT'], data['OBS']), axis=1)
-    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
-        data.rain = np.array([data.rain]).T
-        predictors = np.concatenate((predictors, data.rain), axis=1)
-        rain_shape = data.rain.shape[-1]
-    targets = data['VERIF']
-
-    if test_size > 0:
-        p_train, p_test, t_train, t_test = train_test_split(predictors, targets, test_size=test_size)
-        if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
-            r_train = p_train[:, -1*rain_shape:]
-            p_train = p_train[:, :-1*rain_shape]
-            r_test = p_test[:, -1 * rain_shape:]
-            p_test = p_test[:, :-1 * rain_shape]
-        else:
-            r_train = None
-            r_test = None
-        return p_train, t_train, r_train, p_test, t_test, r_test
-    else:
-        if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
-            return predictors, targets, data.rain
-        else:
-            return predictors, targets, None
-
-
-def train(config, predictor_file, estimator_file=None, no_obs=False, no_models=False, test_size=0):
-    """
-    Generate and train a scikit-learn machine learning estimator. The estimator object is saved as a pickle so that it
-    may be imported and used for predictions at any time.
-    :param config:
-    :param predictor_file: str: full path to saved file of predictor data
-    :param estimator_file: str: full path to output model file
-    :param no_obs: bool: if True, generates the model with no OBS data
-    :param no_models: bool: if True, generates the model with no BUFR data
-    :param test_size: int: if > 0, returns a subset of the training data of size 'test_size' to test on
-    :return: matplotlib Figure if plot_learning_curve is True
-    """
-    estimator = build_estimator(config)
-    rain_tuning = config['Model'].get('Rain tuning', None)
-    if test_size > 0:
-        p_train, t_train, r_train, p_test, t_test, r_test = build_train_data(config, predictor_file, no_obs=no_obs,
-                                                                             no_models=no_models, test_size=test_size)
-    else:
-        p_train, t_train, r_train = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models)
-
-    print('train: training the estimator')
-    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
-        estimator.fit(p_train, t_train, rain_array=r_train)
-    else:
-        estimator.fit(p_train, t_train)
         
-    if estimator_file is None:
-        estimator_file = '%s/%s_mosx.pkl' % (config['MOSX_ROOT'], config['station_id'])
-    print('train: -> exporting to %s' % estimator_file)
-    with open(estimator_file, 'wb') as handle:
-        pickle.dump(estimator, handle, protocol=2)
-
     if test_size > 0:
-        return p_test, t_test, r_test
-    return
+        pred_len = len(predictors[0])
+        targets_len = len(data['VERIF'][0][0])
+        print(targets_len)
+        targets_combined = [] #arrays of verification of different stations combined
+        rain_combined = [] #arrays of rain arrays of different stations combined
+        for day in range(len(data['VERIF'][0])): #for each day
+            rain_day = []
+            for i in range(len(data['VERIF'])): #for each station
+                if i == 0:
+                    targets_day = data['VERIF'][i][day]
+                    rain_day = data.rain[i][day]
+                else:
+                    targets_day = np.concatenate((targets_day,data['VERIF'][i][day]))
+                    rain_day = np.concatenate((rain_day,data.rain[i][day]))
+            targets_combined.append(targets_day)
+            rain_combined.append(rain_day)
+        targets_combined = np.array(targets_combined)
+        rain_combined = np.array(rain_combined)
+        rain_len = len(data.rain[0][0])
+        if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+            predictors = np.concatenate((predictors, rain_combined), axis=1)
+            
 
+        p_train = []
+        t_train = []
+        r_train = []
+        p_test = []
+        t_test = []
+        r_test = []
+        p_train_raw, p_test_raw, t_train_raw, t_test_raw = train_test_split(predictors, targets_combined, test_size=test_size)
+        for i in range(len(station_ids)):
+            if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+                p_train_one = np.array([p_train_raw[j][0:pred_len] for j in range(len(p_train_raw))])
+                r_train_one = np.array([p_train_raw[j][pred_len+i*rain_len:pred_len+(i+1)*rain_len] for j in range(len(p_train_raw))])
+                p_test_one = np.array([p_test_raw[j][0:pred_len] for j in range(len(p_test_raw))])
+                r_test_one = np.array([p_test_raw[j][pred_len+i*rain_len:pred_len+(i+1)*rain_len] for j in range(len(p_test_raw))])
+                r_train.append(r_train_one)
+                r_test.append(r_test_one)
+            else:
+                p_train_one = np.copy(p_train_raw)
+                p_test_one = np.copy(p_test_raw)
+                r_train = None
+                r_test = None
+            t_train_one = np.array([t_train_raw[j][i*targets_len:(i+1)*targets_len] for j in range(len(t_train_raw))])
+            t_test_one = np.array([t_test_raw[j][i*targets_len:(i+1)*targets_len] for j in range(len(t_test_raw))])
+            p_train.append(p_train_one)
+            t_train.append(t_train_one)
+            p_test.append(p_test_one)
+            t_test.append(t_test_one)
+            if i == len(station_ids) - 1: #last station
+                return p_train, t_train, r_train, p_test, t_test, r_test
+    else:
+        predictors_out = []
+        targets = []
+        rain_data = []
+        for i in range(len(station_ids)):
+            targets_one = data['VERIF'][i]
+            if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+                rain_data_one = np.array([data.rain[i]]).T
+                predictors_one = np.concatenate((predictors, rain_data_one), axis=1)
+                rain_shape = rain_data_one.shape[-1]
+                predictors_out.append(predictors_one)
+                targets.append(targets_one)
+                rain_data.append(rain_data_one)
+                if i == len(station_ids) - 1: #last station
+                    return predictors_out, targets, data.rain
+            else:
+                predictors_one = np.copy(predictors)
+                predictors_out.append(predictors_one)
+                targets.append(targets_one)
+                if i == len(station_ids) - 1: #last station
+                    return predictors_out, targets, None
 
-def plot_learning_curve_(estimator, X, y, ylim=None, cv=None, scoring=None, title=None, n_jobs=1,
-                         train_sizes=np.linspace(.1, 1.0, 5)):
+def plot_learning_curve_(estimator, X, y, ylim=None, cv=None, scoring=None, title=None, fig_name=None, n_jobs=1,
+                         train_sizes=np.linspace(.1, 1.0, 5), save_fig=True):
     import matplotlib.pyplot as plt
     from sklearn.model_selection import learning_curve
 
@@ -212,19 +231,70 @@ def plot_learning_curve_(estimator, X, y, ylim=None, cv=None, scoring=None, titl
              label="Training score")
     plt.plot(train_sizes, test_scores_mean, 'o-', color="g",
              label="Cross-validation score")
-
+    
     plt.legend(loc="best")
+    if save_fig:
+        plt.savefig('%s_learning_curve.pdf' % fig_name, bbox_inches='tight')
     return fig
 
 
-def plot_learning_curve(config, predictor_file, no_obs=False, no_models=False, ylim=None, cv=None, scoring=None,
-                        title=None, n_jobs=1, train_sizes=np.linspace(.1, 1.0, 5)):
+def train(config, predictor_file, no_obs=False, no_models=False, test_size=0, overwrite=False):
+    """
+    Generate and train a scikit-learn machine learning estimator. The estimator object is saved as a pickle so that it
+    may be imported and used for predictions at any time.
+    :param config:
+    :param predictor_file: str: full path to saved file of predictor data
+    :param no_obs: bool: if True, generates the model with no OBS data
+    :param no_models: bool: if True, generates the model with no BUFR data
+    :param test_size: int: if > 0, returns a subset of the training data of size 'test_size' to test on
+    :param overwrite: bool: if True, retrains estimators and overwrites estimator files even if they already exist
+    :return: matplotlib Figure if plot_learning_curve is True
+    """
+    if config['multi_stations']: #multiple stations
+        station_ids = config['station_id']
+        estimator_files = config['Model']['estimator_file']
+        if len(estimator_files) != len(station_ids): #There has to be the same number of estimator files as station IDs, so raise error if not
+            raise ValueError("There must be the same number of estimator files as station IDs")
+    else:
+        station_ids = [config['station_id']] #just one station
+    
+    if test_size > 0:
+        p_train, t_train, r_train, p_test, t_test, r_test = build_train_data(config, predictor_file, no_obs=no_obs,
+                                                                             no_models=no_models, test_size=test_size)
+    else:
+        p_train, t_train, r_train = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models)
+
+    for i in range(len(station_ids)):
+        estimator_file = estimator_files[i]
+        if overwrite or not os.path.exists(estimator_file): #only train if estimator file is not already there or overwriting is desired
+            estimator = build_estimator(config)
+        
+            rain_tuning = config['Model'].get('Rain tuning', None)
+
+            print('train: training the estimator for %s' % station_ids[i])
+            if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+                estimator.fit(p_train[i], t_train[i], rain_array=r_train[i])
+            else:
+                estimator.fit(p_train[i], t_train[i])
+
+            print('train: -> exporting to %s' % estimator_file)
+            with open(estimator_file, 'wb') as handle:
+                pickle.dump(estimator, handle, protocol=2)
+
+    if test_size > 0:
+        return p_test, t_test, r_test
+    return
+
+def plot_learning_curve(config, train_file, predictor_file, no_obs=False, no_models=False, ylim=None, scoring=None,
+                        titles=None, fig_names=None, n_jobs=1, train_sizes=np.linspace(.1, 1.0, 5), save_fig=True):
     """
     Generate a simple plot of the test and training learning curve. From scikit-learn:
     http://scikit-learn.org/stable/auto_examples/model_selection/plot_learning_curve.html
     Parameters
     ----------
     config :
+    train_file : string
+        Full path to file containing training data
     predictor_file : string
         Full path to file containing predictor data
     no_obs : boolean
@@ -233,33 +303,51 @@ def plot_learning_curve(config, predictor_file, no_obs=False, no_models=False, y
         Train model without model data
     ylim : tuple, shape (ymin, ymax), optional
         Defines minimum and maximum yvalues plotted.
-    cv : int, cross-validation generator or an iterable, optional
-        Determines the cross-validation splitting strategy.
-        Possible inputs for cv are:
-          - None, to use the default 3-fold cross-validation,
-          - integer, to specify the number of folds.
-          - An object to be used as a cross-validation generator.
-          - An iterable yielding train/test splits.
-        For integer/None inputs, if ``y`` is binary or multiclass,
-        :class:`StratifiedKFold` used. If the estimator is not a classifier
-        or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
-        Refer :ref:`User Guide <cross_validation>` for the various
-        cross-validators that can be used here.
     scoring :
         Scoring function for the error calculation; should be a scikit-learn scorer object
-    title : string
-        Title for the chart.
+    titles : string of list of strings
+        Title for the chart if just one station, or list of titles if multiple stations.
+    fig_names : string of list of strings
+        Figure name for the chart if just one station, or list of figure names if multiple stations.
     n_jobs : integer, optional
         Number of jobs to run in parallel (default 1).
     train_sizes : iterable, optional
         Sequence of subsets of training data used in learning curve plot
     """
-    estimator = build_estimator(config)
-    X, y = build_train_data(config, predictor_file, no_obs=no_obs, no_models=no_models)
-    fig = plot_learning_curve_(estimator, X, y, ylim=ylim, cv=cv, scoring=scoring, title=title, n_jobs=n_jobs,
-                               train_sizes=train_sizes)
-    return fig
-
+    
+    
+    if save_fig and fig_names == None:
+        raise ValueError("Must have figure names if saving figures")
+    if config['multi_stations']: #multiple stations
+        station_ids = config['station_id']
+        if titles is not None and len(titles) != len(station_ids): #There has to be the same number of titles as station IDs, so raise error if not
+            raise ValueError("There must be the same number of titles as station IDs")
+        if save_fig and len(fig_names) != len(station_ids): #There has to be the same number of figure names as station IDs, so raise error if not
+            raise ValueError("There must be the same number of figure names as station IDs")
+    else: #just one station
+        station_ids = [config['station_id']]
+        if titles is not None:
+            titles = [titles]
+        fig_names = [fig_names]
+    
+    predictors, targets, n_samples_test = combine_train_test(config, train_file, predictor_file,
+                                                                        return_count_test=True)
+    figs = []
+    for i in range(len(station_ids)):
+        if titles is None:
+            title = None
+        else:
+            title = titles[i]
+        if fig_names is None:
+            fig_name = None
+        else:
+            fig_name = fig_names[i]
+        estimator = build_estimator(config)
+        cv = SplitConsecutive(first=False, n_samples=n_samples_test[i])
+        fig = plot_learning_curve_(estimator, predictors[i], targets[i], ylim=ylim, cv=cv, scoring=scoring, title=title, fig_name=fig_name,n_jobs=n_jobs,
+                               train_sizes=train_sizes, save_fig=save_fig)
+        figs.append(fig)
+    return figs
 
 def combine_train_test(config, train_file, test_file, no_obs=False, no_models=False, return_count_test=True):
     """
@@ -276,12 +364,22 @@ def combine_train_test(config, train_file, test_file, no_obs=False, no_models=Fa
     """
     p_train, t_train, r_train = build_train_data(config, train_file, no_obs=no_obs, no_models=no_models)
     p_test, t_test, r_test = build_train_data(config, test_file, no_obs=no_obs, no_models=no_models)
-    p_combined = np.concatenate((p_train, p_test), axis=0)
-    t_combined = np.concatenate((t_train, t_test), axis=0)
-    if return_count_test:
-        return p_combined, t_combined, t_test.shape[0]
+    if config['multi_stations']: #multiple stations
+        station_ids = config['station_id']
     else:
-        return p_combined, t_combined
+        station_ids = [config['station_id']] #just one station
+    
+    p_combined = []
+    t_combined = []
+    t_test_shapes = []
+    for i in range(len(station_ids)):
+        p_combined.append(np.concatenate((p_train[i], p_test[i]), axis=0))
+        t_combined.append(np.concatenate((t_train[i], t_test[i]), axis=0))
+        t_test_shapes.append(t_test[i].shape[0])
+        if return_count_test and i == len(station_ids) - 1:
+            return p_combined, t_combined, t_test_shapes
+        elif i == len(station_ids) - 1:
+            return p_combined, t_combined
 
 
 class SplitConsecutive(object):
@@ -341,7 +439,6 @@ class SplitConsecutive(object):
         """
         return self.n_splits
 
-
 def predict_all(config, predictor_file, ensemble=False, time_series_date=None, naive_rain_correction=False,
                 round_result=False, **kwargs):
     """
@@ -364,93 +461,109 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
     rain_tuning = config['Model'].get('Rain tuning', None)
     if config['verbose']:
         print('predict: loading estimator %s' % config['Model']['estimator_file'])
-    estimator = read_pkl(config['Model']['estimator_file'])
-
+    if config['multi_stations']: #multiple stations
+        station_ids = config['station_id']
+        estimator_files = config['Model']['estimator_file']
+        if len(estimator_files) != len(station_ids): #There has to be the same number of estimator files as station IDs, so raise error if not
+            raise ValueError("There must be the same number of estimator files as station IDs")
+    else:
+        station_ids = [config['station_id']] #just one station
+        estimator_files = [config['Model']['estimator_file']]
+        
     predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
-    if config['Model']['rain_forecast_type'] == 'pop' and getattr(estimator, 'is_classifier', False):
-        predict_method = estimator.predict_proba
-    else:
-        predict_method = estimator.predict
-    if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
-        predicted = predict_method(predictors, rain_array=predictor_data.rain, **kwargs)
-    else:
-        predicted = predict_method(predictors, **kwargs)
-    precip = predictor_data.rain
-
-    # Check for precipitation override
-    if naive_rain_correction:
-        for day in range(predicted.shape[0]):
-            if sum(precip[day]) < 0.01:
-                if config['verbose']:
-                    print('predict: warning: overriding MOS-X rain prediction of %0.2f on day %s with 0' %
-                          (predicted[day, 3], day))
-                predicted[day, 3] = 0.
-            elif predicted[day, 3] > max(precip[day]) or predicted[day, 3] < min(precip[day]):
-                if config['verbose']:
-                    print('predict: warning: overriding MOS-X prediction of %0.2f on day %s with model mean' %
-                          (predicted[day, 3], day))
-                predicted[day, 3] = max(0., np.mean(precip[day] + [predicted[day, 3]]))
-    else:
-        # At least make sure we aren't predicting negative values...
-        predicted[:, 3][predicted[:, 3] < 0] = 0.0
-
-    # Round off daily values, if selected
-    if round_result:
-        predicted[:, :3] = np.round(predicted[:, :3])
-        predicted[:, 3] = np.round(predicted[:, 3], 2)
-
-    # If probabilities are requested and available, get the results from each tree
-    if ensemble:
-        num_samples = predictors.shape[0]
-        if not hasattr(estimator, 'named_steps'):
-            forest = estimator
+    
+    predicted = []
+    all_predicted = []
+    predicted_timeseries = []
+    for i in range(len(station_ids)):
+        estimator_file = estimator_files[i]
+        estimator = read_pkl(estimator_file)
+        if config['Model']['rain_forecast_type'] == 'pop' and getattr(estimator, 'is_classifier', False):
+            predict_method = estimator.predict_proba
         else:
-            imputer = estimator.named_steps['imputer']
-            forest = estimator.named_steps['regressor']
-            predictors = imputer.transform(predictors)
-        # If we generated our own ensemble by bootstrapping, it must be treated as such
-        if config['Model']['train_individual'] and config['Model'].get('Bootstrapping', None) is None:
-            num_trees = len(forest.estimators_[0].estimators_)
-            all_predicted = np.zeros((num_samples, 4, num_trees))
-            for v in range(4):
+            predict_method = estimator.predict
+        if rain_tuning is not None and to_bool(rain_tuning.get('use_raw_rain', False)):
+            predicted_one = predict_method(predictors, rain_array=predictor_data.rain[i], **kwargs)
+        else:
+            predicted_one = predict_method(predictors, **kwargs)
+        precip = predictor_data.rain[i]
+
+        # Check for precipitation override
+        if naive_rain_correction:
+            for day in range(predicted_one.shape[0]):
+                if sum(precip[day]) < 0.01:
+                    if config['verbose']:
+                        print('predict: warning: overriding MOS-X rain prediction of %0.2f on day %s with 0' %
+                          (predicted_one[day, 3], day))
+                    predicted_one[day, 3] = 0.
+                elif predicted_one[day, 3] > max(precip[day]) or predicted_one[day, 3] < min(precip[day]):
+                    if config['verbose']:
+                        print('predict: warning: overriding MOS-X prediction of %0.2f on day %s with model mean' %
+                          (predicted_one[day, 3], day))
+                    predicted_one[day, 3] = max(0., np.mean(precip[day] + [predicted_one[day, 3]]))
+        else:
+            # At least make sure we aren't predicting negative values...
+            predicted_one[:, 3][predicted_one[:, 3] < 0] = 0.0
+
+        # Round off daily values, if selected
+        if round_result:
+            predicted_one[:, :3] = np.round(predicted_one[:, :3])
+            predicted_one[:, 3] = np.round(predicted_one[:, 3], 2)
+
+        # If probabilities are requested and available, get the results from each tree
+        if ensemble:
+            num_samples = predictors.shape[0]
+            if not hasattr(estimator, 'named_steps'):
+                forest = estimator
+            else:
+                imputer = estimator.named_steps['imputer']
+                forest = estimator.named_steps['regressor']
+                predictors = imputer.transform(predictors)
+            # If we generated our own ensemble by bootstrapping, it must be treated as such
+            if config['Model']['train_individual'] and config['Model'].get('Bootstrapping', None) is None:
+                num_trees = len(forest.estimators_[0].estimators_)
+                all_predicted_one = np.zeros((num_samples, 4, num_trees))
+                for v in range(4):
+                    for t in range(num_trees):
+                        try:
+                            all_predicted_one[:, v, t] = forest.estimators_[v].estimators_[t].predict(predictors)
+                        except AttributeError:
+                            # Work around the 2-D array of estimators for GBTrees
+                            all_predicted_one[:, v, t] = forest.estimators_[v].estimators_[t][0].predict(predictors)
+            else:
+                num_trees = len(forest.estimators_)
+                all_predicted_one = np.zeros((num_samples, 4, num_trees))
                 for t in range(num_trees):
                     try:
-                        all_predicted[:, v, t] = forest.estimators_[v].estimators_[t].predict(predictors)
+                        all_predicted_one[:, :, t] = forest.estimators_[t].predict(predictors)[:, :4]
                     except AttributeError:
                         # Work around the 2-D array of estimators for GBTrees
-                        all_predicted[:, v, t] = forest.estimators_[v].estimators_[t][0].predict(predictors)
+                        all_predicted_one[:, :, t] = forest.estimators_[t][0].predict(predictors)[:, :4]
+            all_predicted.append(all_predicted_one)
         else:
-            num_trees = len(forest.estimators_)
-            all_predicted = np.zeros((num_samples, 4, num_trees))
-            for t in range(num_trees):
-                try:
-                    all_predicted[:, :, t] = forest.estimators_[t].predict(predictors)[:, :4]
-                except AttributeError:
-                    # Work around the 2-D array of estimators for GBTrees
-                    all_predicted[:, :, t] = forest.estimators_[t][0].predict(predictors)[:, :4]
-    else:
-        all_predicted = None
-
-    if config['Model']['predict_timeseries']:
-        if time_series_date is None:
-            date_now = datetime.utcnow()
-            time_series_date = datetime(date_now.year, date_now.month, date_now.day) + timedelta(days=1)
-            print('predict: warning: set time series start date to %s (was unspecified)' % time_series_date)
-        num_hours = int(24 / config['time_series_interval']) + 1
-        predicted_array = predicted[-1, 4:].reshape((4, num_hours)).T
-        # Get dewpoint
-        predicted_array[:, 2] = dewpoint(predicted_array[:, 0], predicted_array[:, 2])
-        times = pd.date_range(time_series_date.replace(hour=6), periods=num_hours,
+            all_predicted = None
+        
+        if config['Model']['predict_timeseries']:
+            if time_series_date is None:
+                date_now = datetime.utcnow()
+                time_series_date = datetime(date_now.year, date_now.month, date_now.day) + timedelta(days=1)
+                print('predict: warning: set time series start date to %s (was unspecified)' % time_series_date)
+            num_hours = int(24 / config['time_series_interval']) + 1
+            predicted_array = predicted_one[-1, 4:].reshape((4, num_hours)).T
+            # Get dewpoint
+            predicted_array[:, 2] = dewpoint(predicted_array[:, 0], predicted_array[:, 2])
+            times = pd.date_range(time_series_date.replace(hour=6), periods=num_hours,
                               freq='%dH' % config['time_series_interval']).to_pydatetime().tolist()
-        variables = ['temperature', 'rain', 'dewpoint', 'windSpeed']
-        round_dict = {'temperature': 0, 'rain': 2, 'dewpoint': 0, 'windSpeed': 0}
-        predicted_timeseries = pd.DataFrame(predicted_array, index=times, columns=variables)
-        predicted_timeseries = predicted_timeseries.round(round_dict)
-    else:
-        predicted_timeseries = None
-
+            variables = ['temperature', 'rain', 'dewpoint', 'windSpeed']
+            round_dict = {'temperature': 0, 'rain': 2, 'dewpoint': 0, 'windSpeed': 0}
+            predicted_timeseries_one = pd.DataFrame(predicted_array, index=times, columns=variables)
+            predicted_timeseries_one = predicted_timeseries_one.round(round_dict)
+            predicted_timeseries.append(predicted_timeseries_one)
+        else:
+            predicted_timeseries_one = None
+        predicted.append(predicted_one)
+        
     return predicted, all_predicted, predicted_timeseries
-
 
 def predict(config, predictor_file, naive_rain_correction=False, round=False, **kwargs):
     """
@@ -468,7 +581,6 @@ def predict(config, predictor_file, naive_rain_correction=False, round=False, **
                                                                  round_result=round, **kwargs)
     return predicted
 
-
 def predict_rain_proba(config, predictor_file):
     """
     Predict probabilistic rain forecasts for 'pop' or 'categorical' types.
@@ -481,17 +593,29 @@ def predict_rain_proba(config, predictor_file):
     rain_tuning = config['Model'].get('Rain tuning', None)
     if rain_tuning is None:
         raise TypeError('Probabilistic rain forecasts are only possible with a RainTuningEstimator')
-
+        
+    if config['multi_stations']: #multiple stations
+        station_ids = config['station_id']
+        estimator_files = config['Model']['estimator_file']
+        if len(estimator_files) != len(station_ids): #There has to be the same number of estimator files as station IDs, so raise error if not
+            raise ValueError("There must be the same number of estimator files as station IDs")
+    else:
+        station_ids = [config['station_id']] #just one station
+        estimator_files = [config['Model']['estimator_file']]
+        
     # Load the predictor data and estimator
     predictor_data = read_pkl(predictor_file)
-    if config['verbose']:
-        print('predict: loading estimator %s' % config['Model']['estimator_file'])
-    estimator = read_pkl(config['Model']['estimator_file'])
+    for i in range(len(station_ids)):
+        station_id = station_ids[i]
+        estimator_file = estimator_files[i]
+        if config['verbose']:
+            print('predict: loading estimator %s' % estimator_file)
+        estimator = read_pkl(estimator_file)
 
-    predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
-    if to_bool(rain_tuning.get('use_raw_rain', False)):
-        rain_proba = estimator.predict_rain_proba(predictors, rain_array=predictor_data.rain)
-    else:
-        rain_proba = estimator.predict_rain_proba(predictors)
+        predictors = np.concatenate((predictor_data['BUFKIT'], predictor_data['OBS']), axis=1)
+        if to_bool(rain_tuning.get('use_raw_rain', False)):
+            rain_proba = estimator.predict_rain_proba(predictors, rain_array=predictor_data.rain[i])
+        else:
+            rain_proba = estimator.predict_rain_proba(predictors)
 
     return rain_proba
