@@ -278,8 +278,8 @@ def obs(config, output_files=None, csv_files=None, num_hours=24, interval=3, use
             vars_option = ['air_temp_low_6_hour', 'air_temp_high_6_hour', 'precip_accum_six_hour']
             m = Meso(token=config['meso_token'])
             if config['verbose']:
-                print('verification: MesoPy initialized for station %s' % config['station_id'])
-                print('verification: retrieving latest obs and metadata')
+                print('obs: MesoPy initialized for station %s' % config['station_id'])
+                print('obs: retrieving latest obs and metadata')
             latest = m.latest(stid=station_id)
             obs_list = list(latest['STATION'][0]['SENSOR_VARIABLES'].keys())
     
