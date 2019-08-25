@@ -296,7 +296,7 @@ def verification(config, output_files=None, csv_files=None, use_cf6=True, use_cl
             vars_request = pickle.load(fp)
 
         all_obspd = pd.read_csv(csv_file)
-        obspd = all_obspd[['date_time']+[vars_request[0]]+[vars_request[2]]+[vars_request[4]]+vars_request[6:]] #subset of data used as verification
+        obspd = all_obspd[['date_time','air_temp','precip_accum_one_hour', 'wind_speed', 'air_temp_low_6_hour', 'air_temp_high_6_hour', 'precip_accum_six_hour']] #subset of data used as verification
         obspd['date_time']=np.array([datetime.strptime(date, '%Y-%m-%d %H:%M:%S') for date in obspd['date_time'].values],dtype='datetime64[s]')
         if config['verbose']:
             print('verification: setting time back %d hours for daily statistics' % config['forecast_hour_start'])
