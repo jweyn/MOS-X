@@ -277,9 +277,9 @@ def find_matching_dates(bufr, obs, verif, return_data=False):
                 for date in list(verif_dates):
                     if date not in all_dates:
                         verif_one.pop(date, None)
+                verif[i] = verif_one
             bufr[i] = bufr_one
             obs[i] = obs_one
-            verif[i] = verif_one
         return bufr, obs, verif, sorted(list(all_dates))
     else:
         return sorted(list(all_dates))
