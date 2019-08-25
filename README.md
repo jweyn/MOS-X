@@ -37,7 +37,7 @@ The main scripts with "py2" or "py3" in their names indicate they are the separa
 
 1. The first thing to do is to set up the config file for the particular site to forecast for. The `default.config` file has a good number of comments to describe how to do that. Parameters that are not marked 'optional' or with a default value must be specified.
   - The parameter `climo_station_id` is now automatically generated!
-  - It is not recommended to use the upper-air sounding data option. In my testing adding sounding data actually made no difference to the skill of the models, but YMMV. Use with caution. I don't test it.
+  - It is not recommended to use the upper-air sounding data option. In my testing adding sounding data actually made no difference to the skill of the models, but YMMV. Use with caution. I don't test it. Note: this does not work in Python 3 for now.
 2. Once the config is set up, build the model using `build <config>`. The config reader will automatically look for `<config>.config` too, so if you're like me and like to call your config files `KSEA.config`, it's handy to just pass `KSEA`.
   - Depending on how much training data is requested, it may take several hours for BUFRgruven to download everything.
   - Actually building the scikit-learn model, however, takes only 10 minutes for a 1000-tree random forest on a 16-core machine.
