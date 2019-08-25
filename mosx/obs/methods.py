@@ -313,14 +313,16 @@ def obs(config, output_files=None, csv_files=None, num_hours=24, interval=3, use
             except BaseException as e:
                 if config['verbose']:
                     print("obs: warning: '%s' while saving observations" % str(e))
-            obs_hourly = all_obs_hourly[vars_request[0:6]] #subset of data used as predictors
+            obs_hourly = all_obs_hourly[['air_temp', 'altimeter', 'precip_accum_one_hour', 'relative_humidity',
+                        'wind_speed', 'wind_direction']] #subset of data used as predictors
         else:
             if config['verbose']:
                 print('obs: obtaining observations from csv file') 
             all_obs_hourly = pd.read_csv(csv_file)
             with open('%s/%s_obs_vars_request.txt' % (config['SITE_ROOT'], station_id),'rb') as fp:
                 vars_request = pickle.load(fp)
-            obs_hourly = all_obs_hourly[['date_time']+vars_request[0:6]] #subset of data used as predictors
+            obs_hourly = all_obs_hourly[['date_time','air_temp', 'altimeter', 'precip_accum_one_hour', 'relative_humidity',
+                        'wind_speed', 'wind_direction']] #subset of data used as predictors
     
         # Retrieve upper-air sounding data
         soundings = OrderedDict()
