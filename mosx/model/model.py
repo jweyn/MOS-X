@@ -459,8 +459,6 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
     # Load the predictor data and estimator
     predictor_data = read_pkl(predictor_file)
     rain_tuning = config['Model'].get('Rain tuning', None)
-    if config['verbose']:
-        print('predict: loading estimator %s' % config['Model']['estimator_file'])
     if config['multi_stations']: #multiple stations
         station_ids = config['station_id']
         estimator_files = config['Model']['estimator_file']
@@ -478,6 +476,8 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
     for i in range(len(station_ids)):
         estimator_file = estimator_files[i]
         estimator = read_pkl(estimator_file)
+        if config['verbose']:
+            print('predict: loading estimator %s' % estimator_file)
         if config['Model']['rain_forecast_type'] == 'pop' and getattr(estimator, 'is_classifier', False):
             predict_method = estimator.predict_proba
         else:
