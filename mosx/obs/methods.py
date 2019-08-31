@@ -20,87 +20,78 @@ from metpy.calc import interp
 from mosx.util import generate_dates, get_array, read_pkl
 
 
-def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True):
+def upper_air(config, station_id, sounding_station_id, date, use_nan_sounding=False, use_existing=True, save=True):
     """
     Retrieves upper-air data and interpolates to pressure levels. If use_nan_sounding is True, then if a retrieval
     error occurs, a blank sounding will be returned instead of an error.
     :param config:
+    :param station_id: station ID of surface station used
+    :param sounding_station_id: station ID of sounding station to use
     :param date: datetime
     :param use_nan_sounding: bool: if True, use sounding of NaNs instead of raising an error
     :param use_existing: bool: preferentially use existing soundings in sounding_data_dir
     :param save: bool: if True, save processed soundings to sounding_data_dir
     :return:
     """
-    if config['multi_stations']: #Train on multiple stations
-        sounding_station_ids = config['Obs']['sounding_station_id']
-        station_ids = config['station_id']
-        if len(sounding_station_ids) != len(config['station_id']): #There has to be the same number of sounding station IDs as station IDs, so raise error if not
-            raise ValueError("There must be the same number of sounding station IDs as station IDs")
-    else:
-        sounding_station_ids = [config['Obs']['sounding_station_id']]
-        station_ids = [config['station_id']]
-    for i in range(len(sounding_station_ids)):
-        sounding_station_id = sounding_station_ids[i]
-        station_id = station_ids[i]
-        variables = ['height', 'temperature', 'dewpoint', 'u_wind', 'v_wind']
+    variables = ['height', 'temperature', 'dewpoint', 'u_wind', 'v_wind']
     
-        # Define levels for interpolation: same as model data, except omitting lowest_p_level
-        plevs = [600, 750, 850, 925]
-        pres_interp = np.array([p for p in plevs if p <= config['lowest_p_level']])
+    # Define levels for interpolation: same as model data, except omitting lowest_p_level
+    plevs = [600, 750, 850, 925]
+    pres_interp = np.array([p for p in plevs if p <= config['lowest_p_level']])
     
-        # Try retrieving the sounding, first checking for existing
-        if config['verbose']:
-            print('upper_air: retrieving sounding for %s' % datetime.strftime(date, '%Y%m%d%H'))
-        nan_sounding = False
-        retrieve_sounding = False
-        sndg_data_dir = config['Obs']['sounding_data_dir']
-        if not(os.path.isdir(sndg_data_dir)):
-            os.makedirs(sndg_data_dir)
-        sndg_file = '%s/%s_SNDG_%s.pkl' % (sndg_data_dir, station_id, datetime.strftime(date, '%Y%m%d%H'))
-        if use_existing:
-            try:
-                data = read_pkl(sndg_file)
-                if config['verbose']:
-                    print('    Read from file.')
-            except:
-                retrieve_sounding = True
-        else:
+    # Try retrieving the sounding, first checking for existing
+    if config['verbose']:
+        print('upper_air: retrieving sounding for %s' % datetime.strftime(date, '%Y%m%d%H'))
+    nan_sounding = False
+    retrieve_sounding = False
+    sndg_data_dir = config['Obs']['sounding_data_dir']
+    if not(os.path.isdir(sndg_data_dir)):
+        os.makedirs(sndg_data_dir)
+    sndg_file = '%s/%s_SNDG_%s.pkl' % (sndg_data_dir, station_id, datetime.strftime(date, '%Y%m%d%H'))
+    if use_existing:
+        try:
+            data = read_pkl(sndg_file)
+            if config['verbose']:
+                print('    Read from file.')
+        except:
             retrieve_sounding = True
-        if retrieve_sounding:
+    else:
+        retrieve_sounding = True
+    if retrieve_sounding:
+        try:
+            dset = get_upper_air_data(date, sounding_station_id)
+        except:
+            # Try again
             try:
                 dset = get_upper_air_data(date, sounding_station_id)
             except:
-                # Try again
-                try:
-                    dset = get_upper_air_data(date, sounding_station_id)
-                except:
-                    if use_nan_sounding:
-                        if config['verbose']:
-                            print('upper_air: warning: unable to retrieve sounding; using nan.')
-                        nan_sounding = True
-                    else:
-                        raise ValueError('error retrieving sounding for %s' % date)
-    
-            # Retrieve pressure for interpolation to fixed levels
-            if not nan_sounding:
-                pressure = dset.variables['pressure']
-                pres = np.array([p.magnitude for p in list(pressure)])  # units are hPa
-    
-            # Get variables and interpolate; add to dictionary
-            data = OrderedDict()
-            for var in variables:
-                if not nan_sounding:
-                    var_data = dset.variables[var]
-                    var_array = np.array([v.magnitude for v in list(var_data)])
-                    var_interp = interp(pres_interp, pres, var_array)
-                    data[var] = var_interp.tolist()
+                if use_nan_sounding:
+                    if config['verbose']:
+                        print('upper_air: warning: unable to retrieve sounding; using nan.')
+                    nan_sounding = True
                 else:
-                    data[var] = [np.nan] * len(pres_interp)
+                    raise ValueError('error retrieving sounding for %s' % date)
     
-            # Save
-            if save and not nan_sounding:
-                with open(sndg_file, 'wb') as handle:
-                    pickle.dump(data, handle, protocol=2)
+        # Retrieve pressure for interpolation to fixed levels
+        if not nan_sounding:
+            pressure = dset.variables['pressure']
+            pres = np.array([p.magnitude for p in list(pressure)])  # units are hPa
+    
+        # Get variables and interpolate; add to dictionary
+        data = OrderedDict()
+        for var in variables:
+            if not nan_sounding:
+                var_data = dset.variables[var]
+                var_array = np.array([v.magnitude for v in list(var_data)])
+                var_interp = interp(pres_interp, pres, var_array)
+                data[var] = var_interp.tolist()
+            else:
+                data[var] = [np.nan] * len(pres_interp)
+    
+        # Save
+        if save and not nan_sounding:
+            with open(sndg_file, 'wb') as handle:
+                pickle.dump(data, handle, protocol=2)
 
     return data
 
@@ -335,7 +326,7 @@ def obs(config, output_files=None, csv_files=None, num_hours=24, interval=3, use
                 for hour in [0, 12]:
                     sounding_date = start_date + timedelta(hours=hour)
                     try:
-                        sounding = upper_air(config, sounding_date, use_nan_sounding, use_existing=use_existing_sounding)
+                        sounding = upper_air(config, station_id, sounding_station_id, sounding_date, use_nan_sounding, use_existing=use_existing_sounding)
                         soundings[date][sounding_date] = sounding
                     except:
                         print('obs: warning: problem retrieving soundings for %s' % datetime.strftime(date, '%Y%m%d'))
