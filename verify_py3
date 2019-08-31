@@ -182,7 +182,7 @@ if config['multi_stations']: #if using multiple stations
         print('\n--- MOS-X verify: retrieving BUFR data...\n')
         print('Using model cycle %sZ' % cycle)
         if os.path.isfile(bufr_file[i]) and not options.overwrite:
-            print('Using existing BUFR file %s' % bufr_file)
+            print('Using existing BUFR file %s' % bufr_file[i])
             print('If issues occur, delete this file and try again')
         else:
             print('Using model cycle %sZ' % cycle)
@@ -191,7 +191,7 @@ if config['multi_stations']: #if using multiple stations
     
         print('\n--- MOS-X verify: retrieving OBS data...\n')
         if os.path.isfile(obs_file[i]) and not options.overwrite:
-            print('Using existing obs file %s' % obs_file)
+            print('Using existing obs file %s' % obs_file[i])
             print('If issues occur, delete this file and try again')
         else:
             mosx.obs.obs(config, obs_file, use_nan_sounding=False)
@@ -200,7 +200,7 @@ if config['multi_stations']: #if using multiple stations
         
             print('\n--- MOS-X verify: retrieving VERIF data...\n')
             if os.path.isfile(verif_file[i]) and not options.overwrite:
-                print('Using existing verif file %s' % verif_file)
+                print('Using existing verif file %s' % verif_file[i])
                 print('If issues occur, delete this file and try again')
             else:
                 mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=config['Obs']['use_climo_wind'])
@@ -215,7 +215,7 @@ else:
     print('\n--- MOS-X verify: retrieving BUFR data...\n')
     print('Using model cycle %sZ' % cycle)
     if os.path.isfile(bufr_file) and not options.overwrite:
-        print('Using existing BUFR file %s' % bufr_file)
+        print('Using existing BUFR file %s' % bufr_file[i])
         print('If issues occur, delete this file and try again')
     else:
         print('Using model cycle %sZ' % cycle)
@@ -224,7 +224,7 @@ else:
     obs_file = '%s/%s_verify_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
     print('\n--- MOS-X verify: retrieving OBS data...\n')
     if os.path.isfile(obs_file) and not options.overwrite:
-        print('Using existing obs file %s' % obs_file)
+        print('Using existing obs file %s' % obs_file[i])
         print('If issues occur, delete this file and try again')
     else:
         mosx.obs.obs(config, obs_file, use_nan_sounding=False)
@@ -233,7 +233,7 @@ else:
         verif_file = '%s/%s_verify_%s_verif.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
         print('\n--- MOS-X verify: retrieving VERIF data...\n')
         if os.path.isfile(verif_file) and not options.overwrite:
-            print('Using existing verif file %s' % verif_file)
+            print('Using existing verif file %s' % verif_file[i])
             print('If issues occur, delete this file and try again')
         else:
             mosx.verification.verification(config, verif_file, use_climo=False, use_cf6=config['Obs']['use_climo_wind'])
