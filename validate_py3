@@ -111,6 +111,7 @@ else: #just one station
         mosx.bufr.bufr(config, bufr_file, cycle=cycle)
 
     obs_file = '%s/%s_CV_%s_obs.pkl' % (config['SITE_ROOT'], config['station_id'], new_end_date)
+    csv_file = '%s/%s_CV_%s_obs.csv' % (config['SITE_ROOT'], config['station_id'], new_end_date)
     print('\n--- MOS-X validate: retrieving OBS data...\n')
     if os.path.isfile(obs_file) and not overwrite:
         print('Using existing obs file %s' % obs_file)
