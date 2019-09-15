@@ -325,9 +325,9 @@ def bufr(config, output_files=None, cycle='18'):
     """
     if config['multi_stations']: #Train on multiple stations
         bufr_station_ids = config['BUFR']['bufr_station_id']
-        if len(bufr_stations_ids) != len(config['station_id']): #There has to be the same number of BUFR station IDs as station IDs, so raise error if not
+        if len(bufr_station_ids) != len(config['station_id']): #There has to be the same number of BUFR station IDs as station IDs, so raise error if not
             raise ValueError("There must be the same number of BUFR station IDs as station IDs")
-        if len(bufr_stations_ids) != len(output_files): #There has to be the same number of output files as station IDs, so raise error if not
+        if len(bufr_station_ids) != len(output_files): #There has to be the same number of output files as station IDs, so raise error if not
             raise ValueError("There must be the same number of output files as station IDs")
     else:
         bufr_station_ids = [config['BUFR']['bufr_station_id']]
@@ -454,6 +454,10 @@ def bufr(config, output_files=None, cycle='18'):
                 bufr_dict['PROF'][model][verif_date] = profile
                 bufr_dict['SFC'][model][verif_date] = sfc
                 bufr_dict['DAY'][model][verif_date] = daily
+                
+                #Optional: uncomment the two lines below to remove files that are finished processing to save disk space
+                #os.remove(bufr_name)
+                #os.system('rm %s/metdat/gempak/%s%s_%s*' % (config['BUFR_ROOT'], date_str, '%02d' % int(bufarg['cycle']), model.lower()))
     
         # Export data
         if output_files is None:
