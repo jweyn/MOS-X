@@ -59,7 +59,10 @@ def bufkit_parser_time_height(config, file_name, interval=1, start_dt=None, end_
         for n in range(dum_num):
             re_string = re_string + '(-?\d{1,5}.\d{2}) '
         re_string = re_string[:-1]  # Get rid of the trailing space
-        re_string = re_string + '\r\n'
+        if line[-2] == '\r': #Python 2 has a carriage return
+            re_string = re_string + '\r\n'
+        else: #Python 3 doesn't have one
+            re_string = re_string + '\n'
 
     # Compile this re_string for more efficient re searches
     block_expr = re.compile(re_string)
@@ -67,7 +70,10 @@ def bufkit_parser_time_height(config, file_name, interval=1, start_dt=None, end_
     # Now get corresponding indices of the variables we need
     full_line = ''
     for r in block_lines:
-        full_line = full_line + r[:-2] + ' '
+        if r[-2] == '\r': #Python 2 has a carriage return
+            full_line = full_line + r[:-2] + ' '
+        else: #Python 3 doesn't have it
+            full_line = full_line + r[:-1] + ' '
     # Now split it
     varlist = re.split('[ /]', full_line)
     # Get rid of trailing space
@@ -185,13 +191,19 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
     dum_num = len(block_lines[0].split()) - 2
     for n in range(dum_num):
         re_string = re_string + " (-?\d{1,4}.\d{2})"
-    re_string = re_string + '\r\n'
+    if block_lines[0][-2] == '\r': #Python 2 has a carriage return
+        re_string = re_string + '\r\n'
+    else: #Python 3 doesn't have one
+        re_string = re_string + '\n'
     for line in block_lines[1:]:
         dum_num = len(line.split())
         for n in range(dum_num):
             re_string = re_string + '(-?\d{1,4}.\d{2}) '
         re_string = re_string[:-1]  # Get rid of the trailing space
-        re_string = re_string + '\r\n'
+        if line[-2] == '\r': #Python 2 has a carriage return
+            re_string = re_string + '\r\n'
+        else: #Python 3 doesn't have one
+            re_string = re_string + '\n'
 
     # Compile this re_string for more efficient re searches
     block_expr = re.compile(re_string)
@@ -199,7 +211,10 @@ def bufkit_parser_surface(file_name, interval=1, start_dt=None, end_dt=None):
     # Now get corresponding indices of the variables we need
     full_line = ''
     for r in block_lines:
-        full_line = full_line + r[:-2] + ' '
+        if r[-2] == '\r': #Python 2 has a carriage return
+            full_line = full_line + r[:-2] + ' '
+        else: #Python 3 doesn't have it
+            full_line = full_line + r[:-1] + ' '
     # Now split it
     varlist = re.split('[ /]', full_line)
 
@@ -299,27 +314,27 @@ def bufr_retrieve(bufr, bufarg):
     return result
 
 
-def bufr(config, output_file=None, cycle='18'):
+def bufr(config, output_files=None, cycle='18'):
     """
     Generates model data from BUFKIT profiles and saves to a file, which can later be retrieved for either training
     data or model run data.
     :param config:
-    :param output_file: str: output file path
+    :param output_files: str: output file path if just one station, or list of output file paths if multiple stations
     :param cycle: str: model cycle (init hour)
     :return:
     """
-    bufr_station_id = config['BUFR']['bufr_station_id']
+    if config['multi_stations']: #Train on multiple stations
+        bufr_station_ids = config['BUFR']['bufr_station_id']
+        if len(bufr_station_ids) != len(config['station_id']): #There has to be the same number of BUFR station IDs as station IDs, so raise error if not
+            raise ValueError("There must be the same number of BUFR station IDs as station IDs")
+        if len(bufr_station_ids) != len(output_files): #There has to be the same number of output files as station IDs, so raise error if not
+            raise ValueError("There must be the same number of output files as station IDs")
+    else:
+        bufr_station_ids = [config['BUFR']['bufr_station_id']]
+        if output_files is not None:
+            output_files = [output_files]
+
     # Base arguments dictionary. dset and date will be modified iteratively.
-    bufarg = {
-        'dset': '',
-        'date': '',
-        'cycle': cycle,
-        'stations': bufr_station_id.lower(),
-        'noascii': '',
-        'noverbose': '',
-        'nozipit': '',
-        'prepend': ''
-    }
     if config['verbose']:
         print('\n')
     bufr_default_dir = '%s/metdat/bufkit' % config['BUFR_ROOT']
@@ -330,168 +345,193 @@ def bufr(config, output_file=None, cycle='18'):
     if config['verbose']:
         print('bufr: using BUFKIT files in %s' % bufr_data_dir)
     bufr_format = '%s/%s%s.%s_%s.buf'
-    missing_dates = []
-    models = config['BUFR']['bufr_models']
-    model_names = config['BUFR']['models']
-    start_date = datetime.strptime(config['data_start_date'], '%Y%m%d') - timedelta(days=1)
-    end_date = datetime.strptime(config['data_end_date'], '%Y%m%d') - timedelta(days=1)
-    dates = generate_dates(config, start_date=start_date, end_date=end_date)
-    for date in dates:
-        bufarg['date'] = datetime.strftime(date, '%Y%m%d')
-        if date.year < 2010:
-            if config['verbose']:
-                print('bufr: skipping BUFR data for %s; data starts in 2010.' % bufarg['date'])
-            continue
-        if config['verbose']:
-            print('bufr: date: %s' % bufarg['date'])
-
-        for m in range(len(models)):
-            if config['verbose']:
-                print('bufr: trying to retrieve BUFR data for %s...' % model_names[m])
-            bufr_new_name = bufr_format % (bufr_data_dir, bufarg['date'], '%02d' % int(bufarg['cycle']),
-                                           model_names[m], bufarg['stations'])
-            if os.path.isfile(bufr_new_name):
+    for i in range(len(bufr_station_ids)):
+        bufr_station_id = bufr_station_ids[i]
+        bufarg = {
+            'dset': '',
+            'date': '',
+            'cycle': cycle,
+            'stations': bufr_station_id.lower(),
+            'noascii': '',
+            'nozipit': '',
+            'prepend': ''
+        }
+        missing_dates = []
+        models = config['BUFR']['bufr_models']
+        model_names = config['BUFR']['models']
+        start_date = datetime.strptime(config['data_start_date'], '%Y%m%d') - timedelta(days=1)
+        end_date = datetime.strptime(config['data_end_date'], '%Y%m%d') - timedelta(days=1)
+        dates = generate_dates(config, start_date=start_date, end_date=end_date)
+        for date in dates:
+            bufarg['date'] = datetime.strftime(date, '%Y%m%d')
+            if date.year < 2010:
                 if config['verbose']:
-                    print('bufr: file %s already exists; skipping!' % bufr_new_name)
-                break
-
-            if type(models[m]) == list:
-                for model in models[m]:
+                    print('bufr: skipping BUFR data for %s; data starts in 2010.' % bufarg['date'])
+                continue
+            if config['verbose']:
+                print('bufr: date: %s' % bufarg['date'])
+    
+            for m in range(len(models)):
+                if config['verbose']:
+                    print('bufr: trying to retrieve BUFR data for %s...' % model_names[m])
+                bufr_new_name = bufr_format % (bufr_data_dir, bufarg['date'], '%02d' % int(bufarg['cycle']),
+                                               model_names[m], bufarg['stations'])
+                if os.path.isfile(bufr_new_name):
+                    if config['verbose']:
+                        print('bufr: file %s already exists; skipping!' % bufr_new_name)
+                    break
+    
+                if type(models[m]) == list:
+                    for model in models[m]:
+                        try:
+                            bufarg['dset'] = model
+                            bufr_retrieve(bufrgruven, bufarg)
+                            bufr_name = bufr_format % (bufr_default_dir, bufarg['date'], '%02d' % int(bufarg['cycle']),
+                                                       model, bufarg['stations'])
+                            bufr_file = open(bufr_name)
+                            bufr_file.close()
+                            os.rename(bufr_name, bufr_new_name)
+                            if config['verbose']:
+                                print('bufr: BUFR file found for %s at date %s.' % (model, bufarg['date']))
+                                print('bufr: writing BUFR file: %s' % bufr_new_name)
+                            break
+                        except:
+                            if config['verbose']:
+                                print('bufr: BUFR file for %s at date %s not retrieved.' % (model, bufarg['date']))
+                else:
                     try:
+                        model = models[m]
                         bufarg['dset'] = model
                         bufr_retrieve(bufrgruven, bufarg)
                         bufr_name = bufr_format % (bufr_default_dir, bufarg['date'], '%02d' % int(bufarg['cycle']),
-                                                   model, bufarg['stations'])
+                                                   bufarg['dset'], bufarg['stations'])
+                        bufr_file = open(bufr_name)
+                        bufr_file.close()
                         os.rename(bufr_name, bufr_new_name)
                         if config['verbose']:
                             print('bufr: BUFR file found for %s at date %s.' % (model, bufarg['date']))
                             print('bufr: writing BUFR file: %s' % bufr_new_name)
-                        break
                     except:
                         if config['verbose']:
                             print('bufr: BUFR file for %s at date %s not retrieved.' % (model, bufarg['date']))
-            else:
-                try:
-                    model = models[m]
-                    bufarg['dset'] = model
-                    bufr_retrieve(bufrgruven, bufarg)
-                    bufr_name = bufr_format % (bufr_default_dir, bufarg['date'], '%02d' % int(bufarg['cycle']),
-                                               bufarg['dset'], bufarg['stations'])
-                    os.rename(bufr_name, bufr_new_name)
-                    if config['verbose']:
-                        print('bufr: BUFR file found for %s at date %s.' % (model, bufarg['date']))
-                        print('bufr: writing BUFR file: %s' % bufr_new_name)
-                except:
-                    if config['verbose']:
-                        print('bufr: BUFR file for %s at date %s not retrieved.' % (model, bufarg['date']))
-            if not (os.path.isfile(bufr_new_name)):
-                print('bufr: warning: no BUFR file found for model %s at date %s' % (
-                    model_names[m], bufarg['date']))
-                missing_dates.append((date, model_names[m]))
-
-    # Process data
-    print('\n')
-    bufr_dict = OrderedDict({'PROF': OrderedDict(), 'SFC': OrderedDict(), 'DAY': OrderedDict()})
-    for model in model_names:
-        bufr_dict['PROF'][model] = OrderedDict()
-        bufr_dict['SFC'][model] = OrderedDict()
-        bufr_dict['DAY'][model] = OrderedDict()
-
-    for date in dates:
-        date_str = datetime.strftime(date, '%Y%m%d')
-        verif_date = date + timedelta(days=1)
-        start_dt = verif_date + timedelta(hours=config['forecast_hour_start'])
-        end_dt = verif_date + timedelta(hours=config['forecast_hour_start'] + 24)
+                if not (os.path.isfile(bufr_new_name)):
+                    print('bufr: warning: no BUFR file found for model %s at date %s' % (
+                        model_names[m], bufarg['date']))
+                    missing_dates.append((date, model_names[m]))
+    
+        # Process data
+        print('\n')
+        bufr_dict = OrderedDict({'PROF': OrderedDict(), 'SFC': OrderedDict(), 'DAY': OrderedDict()})
         for model in model_names:
-            if (date, model) in missing_dates:
+            bufr_dict['PROF'][model] = OrderedDict()
+            bufr_dict['SFC'][model] = OrderedDict()
+            bufr_dict['DAY'][model] = OrderedDict()
+    
+        for date in dates:
+            date_str = datetime.strftime(date, '%Y%m%d')
+            verif_date = date + timedelta(days=1)
+            start_dt = verif_date + timedelta(hours=config['forecast_hour_start'])
+            end_dt = verif_date + timedelta(hours=config['forecast_hour_start'] + 24)
+            for model in model_names:
+                if (date, model) in missing_dates:
+                    if config['verbose']:
+                        print('bufr: skipping %s data for %s; file missing.' % (model, date_str))
+                    continue
                 if config['verbose']:
-                    print('bufr: skipping %s data for %s; file missing.' % (model, date_str))
-                continue
-            if config['verbose']:
-                print('bufr: processing %s data for %s' % (model, date_str))
-            bufr_name = bufr_format % (bufr_data_dir, date_str, '%02d' % int(bufarg['cycle']), model,
-                                       bufarg['stations'])
-            if not (os.path.isfile(bufr_name)):
-                if config['verbose']:
-                    print('bufr: skipping %s data for %s; file missing.' % (model, date_str))
-                continue
-            profile = bufkit_parser_time_height(config, bufr_name, 6, start_dt, end_dt)
-            sfc, daily = bufkit_parser_surface(bufr_name, 3, start_dt, end_dt)
-            # Drop 'PRES' variable which is useless
-            for key, values in profile.items():
-                values.pop('PRES', None)
-                profile[key] = values
-            bufr_dict['PROF'][model][verif_date] = profile
-            bufr_dict['SFC'][model][verif_date] = sfc
-            bufr_dict['DAY'][model][verif_date] = daily
-
-    # Export data
-    if output_file is None:
-        output_file = '%s/%s_bufr.pkl' % (config['SITE_ROOT'], config['station_id'])
-    if config['verbose']:
-        print('bufr: -> exporting to %s' % output_file)
-    with open(output_file, 'wb') as handle:
-        pickle.dump(bufr_dict, handle, protocol=2)
+                    print('bufr: processing %s data for %s' % (model, date_str))
+                bufr_name = bufr_format % (bufr_data_dir, date_str, '%02d' % int(bufarg['cycle']), model,
+                                           bufarg['stations'])
+                if not (os.path.isfile(bufr_name)):
+                    if config['verbose']:
+                        print('bufr: skipping %s data for %s; file missing.' % (model, date_str))
+                    continue
+                profile = bufkit_parser_time_height(config, bufr_name, 6, start_dt, end_dt)
+                sfc, daily = bufkit_parser_surface(bufr_name, 3, start_dt, end_dt)
+                # Drop 'PRES' variable which is useless
+                for key, values in profile.items():
+                    values.pop('PRES', None)
+                    profile[key] = values
+                bufr_dict['PROF'][model][verif_date] = profile
+                bufr_dict['SFC'][model][verif_date] = sfc
+                bufr_dict['DAY'][model][verif_date] = daily
+                
+                #Optional: uncomment the two lines below to remove files that are finished processing to save disk space
+                #os.remove(bufr_name)
+                #os.system('rm %s/metdat/gempak/%s%s_%s*' % (config['BUFR_ROOT'], date_str, '%02d' % int(bufarg['cycle']), model.lower()))
+    
+        # Export data
+        if output_files is None:
+            output_file = '%s/%s_bufr.pkl' % (config['SITE_ROOT'], bufr_station_id)
+        else:
+            output_file = output_files[i]
+        if config['verbose']:
+            print('bufr: -> exporting to %s' % output_file)
+        with open(output_file, 'wb') as handle:
+            pickle.dump(bufr_dict, handle, protocol=2)
 
     return
 
-
-def process(config, bufr, advection_diagnostic=True):
+def process(config, bufr_list, advection_diagnostic=True):
     """
     Imports the data contained in a bufr dictionary and returns a time-by-x numpy array for use in mosx_predictors. The
     first dimension is date; all other dimensions are first extracted using get_array and then one-dimensionalized.
     :param config:
-    :param bufr: dict: dictionary of processed BUFR data
+    :param bufr_list: list of dictionaries of processed BUFR data
     :param advection_diagnostic: bool: if True, add temperature advection diagnostic to the data
     :return: ndarray: array of formatted BUFR predictor values
     """
     if config['verbose']:
         print('bufr.process: processing array for BUFR data...')
-    # PROF part of the BUFR data
-    items = list(bufr.items())
-    for item in items: #item = (key, value) pair
-        if item[0] == b'PROF': #look for 'BUFR' key
-            bufr_prof = item[1]
-    bufr_prof = get_array(bufr_prof)
-    bufr_dims = list(range(len(bufr_prof.shape)))
-    bufr_dims[0] = 1
-    bufr_dims[1] = 0
-    bufr_prof = bufr_prof.transpose(bufr_dims)
-    bufr_shape = bufr_prof.shape
-    bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
-    bufr_prof = bufr_prof.reshape(tuple(bufr_reshape))
-    # SFC part of the BUFR data
-    for item in items: #item = (key, value) pair
-        if item[0] == b'SFC': #look for 'SFC' key
-            bufr_sfc = item[1]
-    bufr_sfc = get_array(bufr_sfc)
-    bufr_dims = list(range(len(bufr_sfc.shape)))
-    bufr_dims[0] = 1
-    bufr_dims[1] = 0
-    bufr_sfc = bufr_sfc.transpose(bufr_dims)
-    bufr_shape = bufr_sfc.shape
-    bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
-    bufr_sfc = bufr_sfc.reshape(tuple(bufr_reshape))
-    # DAY part of the BUFR data
-    for item in items: #item = (key, value) pair
-        if item[0] == b'DAY': #look for 'DAY' key
-            bufr_day = item[1]
-    bufr_day = get_array(bufr_day)
-    bufr_dims = list(range(len(bufr_day.shape)))
-    bufr_dims[0] = 1
-    bufr_dims[1] = 0
-    bufr_day = bufr_day.transpose(bufr_dims)
-    bufr_shape = bufr_day.shape
-    bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
-    bufr_day = bufr_day.reshape(tuple(bufr_reshape))
-    bufr_out = np.concatenate((bufr_prof, bufr_sfc, bufr_day), axis=1)
-    # Fix missing values
-    bufr_out[bufr_out < -1000.] = np.nan
-    if advection_diagnostic:
-        advection_array = temp_advection(bufr)
-        bufr_out = np.concatenate((bufr_out, advection_array), axis=1)
+    for i in range(len(bufr_list)):
+        bufr = bufr_list[i]
+        # PROF part of the BUFR data
+        items = list(bufr.items())
+        for item in items:
+            if item[0] == b'PROF' or item[0] == 'PROF':
+                bufr_prof = item[1]
+        bufr_prof = get_array(bufr_prof)
+        bufr_dims = list(range(len(bufr_prof.shape)))
+        bufr_dims[0] = 1
+        bufr_dims[1] = 0
+        bufr_prof = bufr_prof.transpose(bufr_dims)
+        bufr_shape = bufr_prof.shape
+        bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
+        bufr_prof = bufr_prof.reshape(tuple(bufr_reshape))
+        # SFC part of the BUFR data
+        for item in items:
+            if item[0] == b'SFC' or item[0] == 'SFC':
+                bufr_sfc = item[1]
+        bufr_sfc = get_array(bufr_sfc)
+        bufr_dims = list(range(len(bufr_sfc.shape)))
+        bufr_dims[0] = 1
+        bufr_dims[1] = 0
+        bufr_sfc = bufr_sfc.transpose(bufr_dims)
+        bufr_shape = bufr_sfc.shape
+        bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
+        bufr_sfc = bufr_sfc.reshape(tuple(bufr_reshape))
+        # DAY part of the BUFR data
+        for item in items:
+            if item[0] == b'DAY' or item[0] == 'DAY':
+                bufr_day = item[1]
+        bufr_day = get_array(bufr_day)
+        bufr_dims = list(range(len(bufr_day.shape)))
+        bufr_dims[0] = 1
+        bufr_dims[1] = 0
+        bufr_day = bufr_day.transpose(bufr_dims)
+        bufr_shape = bufr_day.shape
+        bufr_reshape = [bufr_shape[0]] + [np.cumprod(bufr_shape[1:])[-1]]
+        bufr_day = bufr_day.reshape(tuple(bufr_reshape))
+        bufr_one_out = np.concatenate((bufr_prof, bufr_sfc, bufr_day), axis=1)
+        # Fix missing values
+        bufr_one_out[bufr_one_out < -1000.] = np.nan
+        if advection_diagnostic:
+            advection_array = temp_advection(bufr)
+            bufr_one_out = np.concatenate((bufr_one_out, advection_array), axis=1)
+        if i == 0: #first station
+            bufr_out = bufr_one_out
+        else:
+            bufr_out = np.concatenate((bufr_out,bufr_one_out),axis=1)
     return bufr_out
-
 
 def temp_advection(bufr):
     """
@@ -504,8 +544,8 @@ def temp_advection(bufr):
     :return: advection_array: array of num_samples-by-num_features of advection diagnostic
     """
     items = list(bufr.items())
-    for item in items: #item = (key, value) tuple
-        if item[0] == b'PROF': #look for 'PROF' key
+    for item in items:
+        if item[0] == 'PROF' or item[0] == b'PROF':
             bufr_prof = item[1]
     models = list(bufr_prof.keys())
     num_models = len(models)
@@ -536,10 +576,10 @@ def temp_advection(bufr):
             try:
                 for eval_date in bufr_prof[model][date].keys():
                     items = bufr_prof[model][date][eval_date].items()
-                    for item in items: #item = (key, value) tuple
-                        if item[0] == b'UWND': #look for 'UWND' key
+                    for item in items:
+                        if item[0] == 'UWND' or item[0] == b'UWND':
                             u = item[1]
-                        if item[0] == b'VWND': #look for 'VWND' key
+                        if item[0] == 'VWND' or item[0] == b'VWND':
                             v = item[1]
                     try:
                         V1 = np.array([u[0], v[0]])

@@ -194,57 +194,96 @@ def generate_dates(config, api=False, start_date=None, end_date=None, api_add_ho
                 all_dates.append(date.to_pydatetime())
     return all_dates
 
-
 def find_matching_dates(bufr, obs, verif, return_data=False):
     """
     Finds dates which match in all three dictionaries. If return_data is True, returns the input dictionaries with only
     common dates retained. verif may be None if running the model.
-    :param bufr: dict: dictionary of processed BUFR data
-    :param obs: dict: dictionary of processed OBS data
-    :param verif: dict: dictionary of processed VERIFICATION data
-    :param return_data: bool: if True, returns edited data dictionaries containing only matching dates' data
-    :return: list of dates[, new BUFR, OBS, and VERIF dictionaries]
+    :param bufr: dict: dictionary of processed BUFR data if just one station, or list of dictionaries if multiple stations
+    :param obs: dict: dictionary of processed OBS data if just one station, or list of dictionaries if multiple stations
+    :param verif: dict: dictionary of processed VERIFICATION data if just one station, or list of dictionaries if multiple stations
+    :param return_data: bool: if True, returns edited data dictionaries if just one station, or list of dictionaries if multiple stations containing only matching dates' data
+    :return: list of dates[, new BUFR, OBS, and VERIF dictionaries or list of dictionaries]
     """
-    obs_dates = obs['SFC'].keys()
-    if verif is not None:
-        verif_dates = verif.keys()
-    # For BUFR dates, find for all models
-    items = list(bufr.items())
-    for item in items: #item = (key, value) tuple
-        if item[0] == b'SFC': #look for 'SFC' key
-            bufr_sfc = item[1]
-    bufr_dates_list = [bufr_sfc[key].keys() for key in bufr_sfc.keys()]
-    bufr_dates = bufr_dates_list[0] 
-    if verif is not None:
-        all_dates = (set(verif_dates).intersection(set(obs_dates))).intersection(bufr_dates)
-    else:
-        all_dates = set(obs_dates).intersection(bufr_dates)
+    if type(bufr) != list: #Just one station
+        bufr = [bufr]
+        obs = [obs]
+        if verif is not None:
+            verif = [verif]
+    for i in range(len(bufr)):
+        bufr_one = bufr[i]
+        obs_one = obs[i]
+        if verif is not None:
+            verif_one = verif[i]
+        try:
+            obs_dates = obs_one['SFC'].keys()
+        except KeyError:
+            obs_dates = obs_one[b'SFC'].keys()
+        if verif is not None:
+            verif_dates = verif_one.keys()
+        # For BUFR dates, find for all models
+        items = list(bufr_one.items())
+        for item in items:
+            if item[0] == 'SFC' or item[0] == b'SFC':
+                bufr_sfc = item[1]
+        bufr_dates_list = [bufr_sfc[key].keys() for key in bufr_sfc.keys()]
+        bufr_dates = bufr_dates_list[0] 
+        for m in range(1, len(bufr_dates_list)):
+            bufr_dates = set(bufr_dates).intersection(set(bufr_dates_list[m]))
+        if i == 0: #first station, so initialize all matching dates
+            all_dates = set(bufr_dates)
+        if verif is not None:
+            all_dates = all_dates.intersection((set(verif_dates).intersection(set(obs_dates))).intersection(bufr_dates))
+        else:
+            all_dates = all_dates.intersection(set(obs_dates).intersection(bufr_dates))
     if len(all_dates) == 0:
         raise ValueError('Sorry, no matching dates found in data!')
     print('find_matching_dates: found %d matching dates.' % len(all_dates))
     if return_data:
-        for lev in [b'SFC', b'PROF', b'DAY']:
-            items = list(bufr.items())
-            for item in items: #item = (key, value) tuple
-                if item[0] == lev: #look for lev key
-                    bufr_lev = item[1]
-            for model in bufr_lev.keys():
-                for date in list(bufr_lev[model].keys()):
-                    if date not in all_dates:
-                        bufr_lev[model].pop(date, None)
-        for date in list(obs_dates):
-            if date not in all_dates:
-                obs['SFC'].pop(date, None)
-                obs['SNDG'].pop(date, None)
-        if verif is not None:
-            for date in list(verif_dates):
+        for i in range(len(bufr)):
+            bufr_one = bufr[i]
+            obs_one = obs[i]
+            if verif is not None:
+                verif_one = verif[i]
+            try:
+                obs_dates = obs_one['SFC'].keys()
+            except KeyError:
+                obs_dates = obs_one[b'SFC'].keys()
+            if verif is not None:
+                verif_dates = verif_one.keys()
+            for lev in ['SFC', 'PROF', 'DAY', b'SFC', b'PROF', b'DAY']:
+                items = list(bufr_one.items())
+                for item in items:
+                    if item[0] == lev:
+                        bufr_lev = item[1]
+                        break
+                    else:
+                        bufr_lev = None
+                if bufr_lev != None:
+                    for model in bufr_lev.keys():
+                        for date in list(bufr_lev[model].keys()):
+                            if date not in all_dates:
+                                bufr_lev[model].pop(date, None)
+            for date in list(obs_dates):
                 if date not in all_dates:
-                    verif.pop(date, None)
+                    try:
+                        obs_one['SFC'].pop(date, None)
+                    except KeyError:
+                        obs_one[b'SFC'].pop(date, None)
+                    try:
+                        obs_one['SNDG'].pop(date, None)
+                    except KeyError:
+                        obs_one[b'SNDG'].pop(date, None)
+            if verif is not None:
+                for date in list(verif_dates):
+                    if date not in all_dates:
+                        verif_one.pop(date, None)
+                verif[i] = verif_one
+            bufr[i] = bufr_one
+            obs[i] = obs_one
         return bufr, obs, verif, sorted(list(all_dates))
     else:
         return sorted(list(all_dates))
-
-
+        
 def get_array(dictionary):
     """
     Transforms a nested dictionary into an nd numpy array, assuming that each nested sub-dictionary has the same
@@ -280,39 +319,46 @@ def _get_array(dictionary, out_array):
         for i, d in enumerate(dictionary.values()):
             _get_array(d, out_array[i, :])
 
-
-def unpickle(bufr_file, obs_file, verif_file):
+def unpickle(bufr_files, obs_files, verif_files):
     """
-    Shortcut function to unpickle bufr, obs, and verif files all at once. verif_file may be None if running the model.
-    :param bufr_file: str: full path to pickled BUFR data file
-    :param obs_file: str: full path to pickled OBS data file
-    :param verif_file: str: full path to pickled VERIFICATION data file
+    Shortcut function to unpickle bufr, obs, and verif files all at once. verif_files may be None if running the model.
+    :param bufr_files: str: full path to pickled BUFR data file if just one station, or list of paths if multiple stations
+    :param obs_files: str: full path to pickled OBS data file if just one station, or list of paths if multiple stations
+    :param verif_files: str: full path to pickled VERIFICATION data file if just one station, or list of paths if multiple stations
     :return:
     """
-    print('util: loading BUFKIT data from %s' % bufr_file)
-    handle = open(bufr_file, 'rb')
-    bufr = pickle.load(handle, encoding='bytes')
-    print('util: loading OBS data from %s' % obs_file)
-    handle = open(obs_file, 'rb')
-    obs = pickle.load(handle, encoding='bytes')
-    if verif_file is not None:
-        print('util: loading VERIFICATION data from %s' % verif_file)
-        handle = open(verif_file, 'rb')
-        verif = pickle.load(handle, encoding='bytes')
-    else:
-        verif = None
+    if type(bufr_files) != list: #just one station
+        bufr_files = [bufr_files]
+        obs_files = [obs_files]
+        if verif_files is not None:
+            verif_files = [verif_files]
+    bufr = []
+    obs = []
+    verif = []
+    for i in range(len(bufr_files)):
+        bufr_file = bufr_files[i]
+        obs_file = obs_files[i]
+        print('util: loading BUFKIT data from %s' % bufr_file)
+        bufr.append(read_pkl(bufr_file))
+        print('util: loading OBS data from %s' % obs_file)
+        obs.append(read_pkl(obs_file))
+        if verif_files is not None:
+            verif_file = verif_files[i]
+            print('util: loading VERIFICATION data from %s' % verif_file)
+            verif.append(read_pkl(verif_file))
+        else:
+            verif = None
     return bufr, obs, verif
-
-
-def get_ghcn_stid(config):
+    
+def get_ghcn_stid(config, stid):
     """
     After code by Luke Madaus.
     Gets the GHCN station ID from the 4-letter station ID.
+    :param stid: station ID to obtain data for
     """
     main_addr = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa'
 
     site_directory = config['SITE_ROOT']
-    stid = config['station_id']
     # Check to see that ish-history.txt exists
     stations_file = 'isd-history.txt'
     stations_filename = '%s/%s' % (site_directory, stations_file)
@@ -418,3 +464,15 @@ def to_bool(x):
     except (ValueError, TypeError):
         pass
     raise ValueError("Unknown boolean specifier: '%s'." % x)
+    
+def read_pkl(filename):
+    '''
+    Reads a pickle file from filename according to whether we are using Python 2 or 3.
+    '''
+    try:
+        with open(filename, 'rb') as handle:
+            data = pickle.load(handle)
+    except UnicodeDecodeError: #Python 3 requires you to explicitly tell it to use byte encoding when opening Python 2 made pickle files 
+        with open(filename, 'rb') as handle:
+            data = pickle.load(handle, encoding='bytes')
+    return data

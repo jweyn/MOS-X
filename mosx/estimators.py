@@ -102,12 +102,12 @@ class RainTuningEstimator(object):
         for attr in self.base_estimator.__dict__.keys():
             try:
                 setattr(self, attr, getattr(self.base_estimator, attr))
-            except AttributeError as e:
-                print("warning: ",e)
+            except AttributeError:
+                pass
         try:
             self.estimators_ = self.base_estimator.estimators_
-        except AttributeError as e:
-            print("warning: ",e)
+        except AttributeError:
+            pass
         self.rain_estimator_name = rain_estimator
         self.is_classifier = ('Classifi' in self.rain_estimator_name)
         Regressor = get_object('sklearn.%s' % rain_estimator)

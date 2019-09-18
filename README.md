@@ -1,4 +1,4 @@
-# MOS-X (Python 3 version of Jonathan Weyn's original repository)
+# MOS-X (modified version of Jonathan Weyn's original repository)
 
 MOS-X is a machine learning-based forecasting model built in Python designed to produce output tailored for the [WxChallenge](http://www.wxchallenge.com) weather forecasting competition.
 It uses an external executable to download and process time-height profiles of model data from the National Centers for Environmental Prediction (NCEP) Global Forecast System (GFS) and North American Mesoscale (NAM) models.
@@ -8,7 +8,7 @@ These data, along with surface observations from MesoWest, are used to train any
 
 ### Requirements
 
-- Python 3 (not tested for all functions; feel free to make a pull request for additional fixes. For Python 2 use Jonathan Weyn's original repository)
+- Python 2 or 3 (for now I get an unpickling error when predicting using Python 3; use with Python 3 with caution and feel free to raise issues.)
 - A workstation with a recent Linux installation... sorry, that's all that will work with the next item...
 - [BUFRgruven](http://strc.comet.ucar.edu/software/bgruven/) - for model data
 - An API key for [MesoWest](https://synopticlabs.org/api/mesonet/) - unfortunately the API now has a limited free tier. MOS-X currently does a poor job of data caching so large data sets will exceed the free limit - use with caution.
@@ -16,24 +16,28 @@ These data, along with surface observations from MesoWest, are used to train any
 
 ### Python packages - easier with conda
 
-- NumPy (tested on version 1.16.4)
+- NumPy (>= 1.14.0)
 - scipy
-- pandas (tested on version 0.24.2)
-- ConfigObj (and validate)
+- pandas (tested on version 0.24.x)
+- ConfigObj
 - ulmo (use conda-forge)
 - the excellent [scikit-learn](http://scikit-learn.org/stable/index.html)
+- metpy (tested on version 0.7.0; don't use version 0.8 and up because get_upper_air_data no longer exists)
+- pint (0.8.1; pint 0.9 will be automatically installed with metpy but there is a bug in it that will cause errors)
 
 ### Installation
 
-Nothing to do really. Just make sure the scripts in the main directory (`build`, `run`, `verify`, `validate`, and `performance`) are executable, for example:
+Nothing to do really. Just make sure the scripts in the main directory (`build`, `run`, `verify_py2` or `verify_py3`, `validate_py2` or `validate_py3`, and `performance`) are executable, for example:
 
-`chmod +x build run verify validate performance`
+`chmod +x build run verify_py3 validate_py3 performance`
+
+The main scripts with "py2" or "py3" in their names indicate they are the separate Python 2 and Python 3 versions respectively.
 
 ## Building a model
 
 1. The first thing to do is to set up the config file for the particular site to forecast for. The `default.config` file has a good number of comments to describe how to do that. Parameters that are not marked 'optional' or with a default value must be specified.
   - The parameter `climo_station_id` is now automatically generated!
-  - It is not recommended to use the upper-air sounding data option. In my testing adding sounding data actually made no difference to the skill of the models, but YMMV. Use with caution. I don't test it.
+  - It is not recommended to use the upper-air sounding data option. In my testing adding sounding data actually made no difference to the skill of the models, but YMMV. Use with caution. I don't test it. Note: this does not work in Python 3 for now.
 2. Once the config is set up, build the model using `build <config>`. The config reader will automatically look for `<config>.config` too, so if you're like me and like to call your config files `KSEA.config`, it's handy to just pass `KSEA`.
   - Depending on how much training data is requested, it may take several hours for BUFRgruven to download everything.
   - Actually building the scikit-learn model, however, takes only 10 minutes for a 1000-tree random forest on a 16-core machine.
