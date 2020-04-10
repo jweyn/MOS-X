@@ -16,7 +16,7 @@ import pickle
 from collections import OrderedDict
 from mosx.MesoPy import Meso
 from siphon.simplewebservice.wyoming import WyomingUpperAir
-from metpy.calc import interp
+from metpy.interpolate import interpolate_1d
 from mosx.util import generate_dates, get_array
 
 
@@ -83,7 +83,7 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
             if not nan_sounding:
                 var_data = dset.variables[var]
                 var_array = np.array([v.magnitude for v in list(var_data)])
-                var_interp = interp(pres_interp, pres, var_array)
+                var_interp = interpolate_1d(pres_interp, pres, var_array)
                 data[var] = var_interp.tolist()
             else:
                 data[var] = [np.nan] * len(pres_interp)
