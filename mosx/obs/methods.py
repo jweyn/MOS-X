@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import pickle
 from collections import OrderedDict
 from mosx.MesoPy import Meso
-from metpy.io import get_upper_air_data
+from siphon.simplewebservice.wyoming import WyomingUpperAir
 from metpy.calc import interp
 from mosx.util import generate_dates, get_array
 
@@ -59,11 +59,11 @@ def upper_air(config, date, use_nan_sounding=False, use_existing=True, save=True
         retrieve_sounding = True
     if retrieve_sounding:
         try:
-            dset = get_upper_air_data(date, config['Obs']['sounding_station_id'])
+            dset = WyomingUpperAir.request_data(date, config['Obs']['sounding_station_id'])
         except:
             # Try again
             try:
-                dset = get_upper_air_data(date, config['Obs']['sounding_station_id'])
+                dset = dset = WyomingUpperAir.request_data(date, config['Obs']['sounding_station_id'])
             except:
                 if use_nan_sounding:
                     if config['verbose']:
