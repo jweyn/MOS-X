@@ -16,7 +16,7 @@ import numpy as np
 from shutil import copy2
 from collections import OrderedDict
 from optparse import OptionParser
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pickle
 import json
 
@@ -60,7 +60,7 @@ except IndexError:
 config = mosx.util.get_config(config_file)
 
 if datestr == 'tomorrow':
-    date = datetime.utcnow()
+    date = datetime.now(timezone.utc)
     # BUFR cycle
     cycle = str(6 * (((date.hour + 24 - 5) % 24) // 6))
     verif_date = datetime(date.year, date.month, date.day) + timedelta(days=1)
