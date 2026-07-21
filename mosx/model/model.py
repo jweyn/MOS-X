@@ -8,7 +8,7 @@
 Methods for training scikit-learn models.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from mosx.util import get_object, to_bool, dewpoint
@@ -457,7 +457,7 @@ def predict_all(config, predictor_file, ensemble=False, time_series_date=None, n
 
     if config['Model']['predict_timeseries']:
         if time_series_date is None:
-            date_now = datetime.utcnow()
+            date_now = datetime.now(timezone.utc)
             time_series_date = datetime(date_now.year, date_now.month, date_now.day) + timedelta(days=1)
             print('predict: warning: set time series start date to %s (was unspecified)' % time_series_date)
         num_hours = int(24 / config['time_series_interval']) + 1
