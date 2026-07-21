@@ -12,7 +12,7 @@ import os
 import re
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pickle
 import requests
 from collections import OrderedDict
@@ -378,7 +378,7 @@ def verification(config, output_file=None, use_cf6=True, use_climo=True, force_r
             print('verification: not using climo.')
         climo_values = {}
     if use_cf6:
-        num_months = min((datetime.utcnow() - dates[0]).days / 30, 24)
+        num_months = min((datetime.now(timezone.utc) - dates[0]).days / 30, 24)
         try:
             get_cf6_files(config, num_months)
         except BaseException as e:
