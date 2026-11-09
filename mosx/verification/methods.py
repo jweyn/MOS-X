@@ -53,7 +53,7 @@ def get_cf6_files(config, num_files=1):
         # Format the web address: goes through 'versions' on NWS site which correspond to increasingly older files
         version = 'version=%d&glossary=0' % r
         nws_site = '&'.join((nws_url, version))
-        response = requests.get(nws_site)
+        response = requests.get(nws_site, timeout=30)
         cf6_data = response.text
 
         # Remove the header
